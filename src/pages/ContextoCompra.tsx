@@ -1,0 +1,330 @@
+// src/pages/ContextoCompra.tsx
+import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import styled from "styled-components";
+import { Bg } from "@/components/ui/app-surface";
+import logo from "@/images/logoc.png";
+import { ArrowLeft } from "lucide-react";
+
+/* ================= TYPES ================= */
+
+type CustomerType = "cpf" | "cnpj";
+type ChannelType = "varejo" | "atacado";
+
+function getPriceTable(customer: CustomerType, channel: ChannelType) {
+  return `${channel.toUpperCase()}_${customer.toUpperCase()}`;
+}
+
+/* ================= STYLES ================= */
+
+const Screen = styled(Bg)`
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+
+  /* ✅ modo totem: sem scroll/bounce */
+  overscroll-behavior: none;
+  touch-action: none; /* bloqueia pan/zoom */
+  -webkit-user-select: none;
+  user-select: none;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  background: linear-gradient(135deg, #b82626 0%, #9e0f14 60%, #7f0b10 100%);
+`;
+
+const TopBar = styled.div`
+  position: absolute;
+  top: 30px;
+  left: 30px;
+
+  @media (max-width: 640px) {
+    top: max(14px, env(safe-area-inset-top));
+    left: 14px;
+  }
+`;
+
+const BackBtn = styled.button`
+  height: 50px;
+  padding: 0 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(0, 0, 0, 0.15);
+  color: white;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+
+  &:active {
+    transform: scale(0.98);
+  }
+
+  @media (max-width: 640px) {
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+`;
+
+const Logo = styled.img`
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  height: 46px;
+
+  @media (max-width: 640px) {
+    top: max(16px, env(safe-area-inset-top));
+    height: 34px;
+  }
+`;
+
+const Content = styled.div`
+  width: min(900px, 90vw);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 60px;
+
+  @media (max-width: 640px) {
+    width: min(520px, calc(100vw - 32px));
+    gap: 24px;
+    margin-top: 52px;
+  }
+`;
+
+const Question = styled.h1`
+  font-size: clamp(28px, 4vw, 46px);
+  font-weight: 1000;
+  color: white;
+  margin: 0;
+
+  @media (max-width: 640px) {
+    font-size: clamp(24px, 7vw, 34px);
+    line-height: 1.08;
+  }
+`;
+
+const Options = styled.div`
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 24px;
+
+  @media (max-width: 640px) {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+`;
+
+const OptionBtn = styled.button`
+  height: 140px;
+  border-radius: 26px;
+  border: 0;
+  cursor: pointer;
+
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 1000;
+  letter-spacing: -0.01em;
+
+  background: white;
+  color: #9e0f14;
+
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  transition: transform 120ms ease;
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  @media (max-width: 640px) {
+    height: 92px;
+    border-radius: 22px;
+    font-size: clamp(22px, 6vw, 28px);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.22);
+  }
+`;
+
+/* ---------------- Lock Overlay (landscape) ---------------- */
+const RotateOverlay = styled.div<{ $show: boolean }>`
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: ${({ $show }) => ($show ? "flex" : "none")};
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+
+  background: rgba(10, 10, 10, 0.92);
+  color: #fff;
+  text-align: center;
+
+  .box {
+    width: min(560px, 92vw);
+    border-radius: 22px;
+    padding: 22px 18px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+  }
+
+  h2 {
+    margin: 0 0 10px;
+    font-size: 22px;
+    font-weight: 1000;
+    letter-spacing: -0.02em;
+  }
+
+  p {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 750;
+    color: rgba(255, 255, 255, 0.85);
+    line-height: 1.35;
+  }
+`;
+
+/* ================= PAGE ================= */
+
+export default function ContextoCompra() {
+  const navigate = useNavigate();
+
+  const [step, setStep] = useState<1 | 2>(1);
+  const [customerType, setCustomerType] = useState<CustomerType | null>(null);
+  const [isLandscape, setIsLandscape] = useState(false);
+
+  // ✅ trava scroll do documento inteiro (iOS/Android/Safari)
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyHeight = body.style.height;
+    const prevBodyPosition = body.style.position;
+    const prevBodyWidth = body.style.width;
+    const prevBodyTouchAction = (body.style as any).touchAction;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.height = "100dvh";
+    body.style.position = "fixed";
+    body.style.width = "100%";
+    (body.style as any).touchAction = "none";
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.height = prevBodyHeight;
+      body.style.position = prevBodyPosition;
+      body.style.width = prevBodyWidth;
+      (body.style as any).touchAction = prevBodyTouchAction;
+    };
+  }, []);
+
+  // ✅ bloqueia uso em horizontal (mostra overlay)
+  useEffect(() => {
+    const check = () => {
+      setIsLandscape(window.innerWidth > window.innerHeight);
+    };
+    check();
+
+    window.addEventListener("resize", check);
+    window.addEventListener("orientationchange", check as any);
+
+    return () => {
+      window.removeEventListener("resize", check);
+      window.removeEventListener("orientationchange", check as any);
+    };
+  }, []);
+
+  function handleCustomer(type: CustomerType) {
+    setCustomerType(type);
+    setStep(2);
+
+    // ✅ salva o tipo já aqui (pra travar o login CPF vs CNPJ)
+    const partialCtx = {
+      customer_type: type,
+      channel: null as ChannelType | null,
+      price_table: null as string | null,
+      created_at: new Date().toISOString(),
+    };
+    localStorage.setItem("pricing_context", JSON.stringify(partialCtx));
+  }
+
+  function handleChannel(channel: ChannelType) {
+    if (!customerType) return;
+
+    const ctx = {
+      customer_type: customerType,
+      channel,
+      price_table: getPriceTable(customerType, channel),
+      created_at: new Date().toISOString(),
+    };
+
+    localStorage.setItem("pricing_context", JSON.stringify(ctx));
+    navigate("/catalogo");
+  }
+
+  return (
+    <>
+      <Screen>
+        <TopBar>
+          <BackBtn
+            onClick={() => {
+              if (step === 1) {
+                navigate("/inicio");
+              } else {
+                setStep(1);
+                setCustomerType(null);
+
+                // opcional: mantém o pricing_context parcial? aqui eu limpo pra evitar travar sem querer
+                localStorage.removeItem("pricing_context");
+              }
+            }}
+          >
+            <ArrowLeft size={18} />
+            Voltar
+          </BackBtn>
+        </TopBar>
+
+        <Logo src={logo} alt="Gostinho Mineiro" />
+
+        <Content>
+          {step === 1 && (
+            <>
+              <Question>Você vai comprar como?</Question>
+
+              <Options>
+                <OptionBtn onClick={() => handleCustomer("cpf")}>CPF</OptionBtn>
+                <OptionBtn onClick={() => handleCustomer("cnpj")}>CNPJ</OptionBtn>
+              </Options>
+            </>
+          )}
+
+          {step === 2 && (
+            <>
+              <Question>Você vai comprar no…</Question>
+
+              <Options>
+                <OptionBtn onClick={() => handleChannel("varejo")}>VAREJO</OptionBtn>
+                <OptionBtn onClick={() => handleChannel("atacado")}>ATACADO</OptionBtn>
+              </Options>
+            </>
+          )}
+        </Content>
+      </Screen>
+
+      <RotateOverlay $show={isLandscape}>
+        <div className="box">
+          <h2>Use o totem na vertical</h2>
+          <p>Por favor, gire a tela para continuar.</p>
+        </div>
+      </RotateOverlay>
+    </>
+  );
+}
