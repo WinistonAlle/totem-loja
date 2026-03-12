@@ -4,12 +4,21 @@ dotenv.config();
 import express from "express";
 import { spawn } from "child_process";
 import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 app.use(express.json({ limit: "2mb" }));
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "..");
 const PORT = Number(process.env.SAIBWEB_WEBHOOK_PORT ?? 3333);
 const DEFAULT_SLOWMO = process.env.SAIBWEB_SLOWMO ?? "250";
+const SHEET_SYNC_INTERVAL_MS = Number(process.env.SHEET_SYNC_INTERVAL_MS ?? 60 * 60 * 1000);
+const SHEET_SCRIPT_PATH = path.resolve(
+  PROJECT_ROOT,
+  process.env.SHEET_SYNC_SCRIPT_PATH ?? "scripts/syncEmployeesFromSheet.mjs"
+);
 
 /**
  * =====================
@@ -26,10 +35,6 @@ let lastRunAt: number | null = null;
  * GOOGLE SHEETS SYNC
  * =====================
  */
-const SHEET_SYNC_INTERVAL_MS = 60 * 1000; // 1 hora
-const SHEET_SCRIPT_PATH =
-  "C:\\Users\\JULIO\\Desktop\\catalogo-funcionario\\catalogo-funcionarios\\scripts\\syncEmployeesFromSheet.mjs";
-
 let sheetSyncRunning = false;
 let lastSheetSyncAt: number | null = null;
 
@@ -38,20 +43,15 @@ let lastSheetSyncAt: number | null = null;
  * HELPERS
  * =====================
  */
-function extractOrderId(payload: any): string | null {
-  const id = payload?.record?.id ?? payload?.id ?? payload?.order_id ?? null;
+function extractOrderId(payload: Record<string, unknown> | null | undefined): string | null {
+  const record = payload?.record;
+  const recordId =
+    record && typeof record === "object" && "id" in record ? (record.id as string | number) : null;
+  const id = recordId ?? payload?.id ?? payload?.order_id ?? null;
   return id ? String(id) : null;
 }
 
 function buildCommand() {
-  if (process.platform === "win32") {
-    return {
-      command: "cmd.exe",
-      args: ["/c", "npx", "tsx", "automation/saibweb-runner.ts"],
-      printable: "cmd.exe /c npx tsx automation/saibweb-runner.ts",
-    };
-  }
-
   return {
     command: "npx",
     args: ["tsx", "automation/saibweb-runner.ts"],
@@ -155,14 +155,19 @@ function runSheetSync() {
     return;
   }
 
+  if (!path.isAbsolute(SHEET_SCRIPT_PATH)) {
+    console.error("❌ SHEET_SCRIPT_PATH inválido:", SHEET_SCRIPT_PATH);
+    return;
+  }
+
   sheetSyncRunning = true;
   lastSheetSyncAt = Date.now();
 
   console.log("📊 Iniciando sync Google Sheets");
-  console.log("▶️ node", SHEET_SCRIPT_PATH);
+  console.log("▶️", process.execPath, SHEET_SCRIPT_PATH);
 
-  const child = spawn("node", [SHEET_SCRIPT_PATH], {
-    cwd: path.dirname(SHEET_SCRIPT_PATH),
+  const child = spawn(process.execPath, [SHEET_SCRIPT_PATH], {
+    cwd: PROJECT_ROOT,
     stdio: "inherit",
     shell: false,
   });
@@ -222,7 +227,8 @@ app.post("/webhook/new-order", (req, res) => {
  */
 app.listen(PORT, () => {
   console.log(`🧩 SAIBWEB webhook rodando em http://localhost:${PORT}`);
-  console.log("⏱️ Google Sheets sync a cada 1 hora");
+  console.log(`⏱️ Google Sheets sync a cada ${Math.round(SHEET_SYNC_INTERVAL_MS / 1000)}s`);
+  console.log("📄 Script sync:", SHEET_SCRIPT_PATH);
 });
 
 // ⏱️ inicia o job após subir o servidor

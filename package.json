@@ -8,7 +8,10 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview --port=4174"
+    "preview": "vite preview --port=4174",
+    "automation:webhook": "tsx automation/saibweb-webhook.ts",
+    "automation:runner": "tsx automation/saibweb-runner.ts",
+    "automation:sheet-sync": "node scripts/syncEmployeesFromSheet.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
