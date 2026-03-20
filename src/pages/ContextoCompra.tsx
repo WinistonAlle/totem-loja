@@ -8,12 +8,7 @@ import { ArrowLeft } from "lucide-react";
 
 /* ================= TYPES ================= */
 
-type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
-
-function getPriceTable(customer: CustomerType, channel: ChannelType) {
-  return `${channel.toUpperCase()}_${customer.toUpperCase()}`;
-}
 
 /* ================= STYLES ================= */
 
@@ -193,8 +188,6 @@ const RotateOverlay = styled.div<{ $show: boolean }>`
 export default function ContextoCompra() {
   const navigate = useNavigate();
 
-  const [step, setStep] = useState<1 | 2>(1);
-  const [customerType, setCustomerType] = useState<CustomerType | null>(null);
   const [isLandscape, setIsLandscape] = useState(false);
 
   // ✅ trava scroll do documento inteiro (iOS/Android/Safari)
@@ -242,31 +235,17 @@ export default function ContextoCompra() {
     };
   }, []);
 
-  function handleCustomer(type: CustomerType) {
-    setCustomerType(type);
-    setStep(2);
-
-    // ✅ salva o tipo já aqui (pra travar o login CPF vs CNPJ)
-    const partialCtx = {
-      customer_type: type,
-      channel: null as ChannelType | null,
-      price_table: null as string | null,
-      created_at: new Date().toISOString(),
-    };
-    localStorage.setItem("pricing_context", JSON.stringify(partialCtx));
-  }
-
   function handleChannel(channel: ChannelType) {
-    if (!customerType) return;
-
+    const customerType = channel === "atacado" ? "cnpj" : "cpf";
     const ctx = {
       customer_type: customerType,
       channel,
-      price_table: getPriceTable(customerType, channel),
+      price_table: `${channel.toUpperCase()}_${customerType.toUpperCase()}`,
       created_at: new Date().toISOString(),
     };
 
     localStorage.setItem("pricing_context", JSON.stringify(ctx));
+    window.dispatchEvent(new Event("pricing_context_changed"));
     navigate("/catalogo");
   }
 
@@ -276,15 +255,9 @@ export default function ContextoCompra() {
         <TopBar>
           <BackBtn
             onClick={() => {
-              if (step === 1) {
-                navigate("/inicio");
-              } else {
-                setStep(1);
-                setCustomerType(null);
-
-                // opcional: mantém o pricing_context parcial? aqui eu limpo pra evitar travar sem querer
-                localStorage.removeItem("pricing_context");
-              }
+              localStorage.removeItem("pricing_context");
+              window.dispatchEvent(new Event("pricing_context_changed"));
+              navigate("/inicio");
             }}
           >
             <ArrowLeft size={18} />
@@ -295,27 +268,14 @@ export default function ContextoCompra() {
         <Logo src={logo} alt="Gostinho Mineiro" />
 
         <Content>
-          {step === 1 && (
-            <>
-              <Question>Você vai comprar como?</Question>
+          <>
+            <Question>Escolha o tipo de compra</Question>
 
-              <Options>
-                <OptionBtn onClick={() => handleCustomer("cpf")}>CPF</OptionBtn>
-                <OptionBtn onClick={() => handleCustomer("cnpj")}>CNPJ</OptionBtn>
-              </Options>
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <Question>Você vai comprar no…</Question>
-
-              <Options>
-                <OptionBtn onClick={() => handleChannel("varejo")}>VAREJO</OptionBtn>
-                <OptionBtn onClick={() => handleChannel("atacado")}>ATACADO</OptionBtn>
-              </Options>
-            </>
-          )}
+            <Options>
+              <OptionBtn onClick={() => handleChannel("varejo")}>VAREJO</OptionBtn>
+              <OptionBtn onClick={() => handleChannel("atacado")}>ATACADO</OptionBtn>
+            </Options>
+          </>
         </Content>
       </Screen>
 

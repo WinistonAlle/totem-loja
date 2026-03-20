@@ -5,20 +5,33 @@ import express from "express";
 import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
-
-const app = express();
-app.use(express.json({ limit: "2mb" }));
+import { createClient } from "@supabase/supabase-js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
+
+const app = express();
+app.use(express.json({ limit: "2mb" }));
+
 const PORT = Number(process.env.SAIBWEB_WEBHOOK_PORT ?? 3333);
 const DEFAULT_SLOWMO = process.env.SAIBWEB_SLOWMO ?? "250";
-const SHEET_SYNC_INTERVAL_MS = Number(process.env.SHEET_SYNC_INTERVAL_MS ?? 60 * 60 * 1000);
-const SHEET_SCRIPT_PATH = path.resolve(
-  PROJECT_ROOT,
-  process.env.SHEET_SYNC_SCRIPT_PATH ?? "scripts/syncEmployeesFromSheet.mjs"
+const WEBHOOK_TOKEN = process.env.SAIBWEB_WEBHOOK_TOKEN || "";
+const RECOVER_ON_BOOT = process.env.SAIBWEB_RECOVER_PROCESSING_ON_BOOT === "1";
+const PROCESSING_RECOVERY_MINUTES = Number(
+  process.env.SAIBWEB_PROCESSING_RECOVERY_MINUTES ?? 20
 );
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY");
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false },
+});
 
 /**
  * =====================
@@ -32,30 +45,27 @@ let lastRunAt: number | null = null;
 
 /**
  * =====================
- * GOOGLE SHEETS SYNC
- * =====================
- */
-let sheetSyncRunning = false;
-let lastSheetSyncAt: number | null = null;
-
-/**
- * =====================
  * HELPERS
  * =====================
  */
-function extractOrderId(payload: Record<string, unknown> | null | undefined): string | null {
-  const record = payload?.record;
-  const recordId =
-    record && typeof record === "object" && "id" in record ? (record.id as string | number) : null;
-  const id = recordId ?? payload?.id ?? payload?.order_id ?? null;
+function extractOrderId(payload: any): string | null {
+  const id = payload?.record?.id ?? payload?.id ?? payload?.order_id ?? null;
   return id ? String(id) : null;
 }
 
 function buildCommand() {
+  if (process.platform === "win32") {
+    return {
+      command: "cmd.exe",
+      args: ["/c", "npx", "tsx", path.resolve(PROJECT_ROOT, "automation", "saibweb-runner.ts")],
+      printable: `cmd.exe /c npx tsx ${path.resolve(PROJECT_ROOT, "automation", "saibweb-runner.ts")}`,
+    };
+  }
+
   return {
     command: "npx",
-    args: ["tsx", "automation/saibweb-runner.ts"],
-    printable: "npx tsx automation/saibweb-runner.ts",
+    args: ["tsx", path.resolve(PROJECT_ROOT, "automation", "saibweb-runner.ts")],
+    printable: `npx tsx ${path.resolve(PROJECT_ROOT, "automation", "saibweb-runner.ts")}`,
   };
 }
 
@@ -65,8 +75,82 @@ function buildChildEnv(orderId?: string | null): NodeJS.ProcessEnv {
     SAIBWEB_SLOWMO: String(process.env.SAIBWEB_SLOWMO ?? DEFAULT_SLOWMO),
     ...(process.env.SAIBWEB_KEEP_OPEN === "1" ? { SAIBWEB_KEEP_OPEN: "1" } : {}),
     ...(process.env.SAIBWEB_PAUSE === "1" ? { SAIBWEB_PAUSE: "1" } : {}),
-    ...(orderId ? { ORDER_ID: String(orderId) } : {}),
+    ...(orderId ? { ORDER_ID: String(orderId) } : {}), // ✅ agora o runner usa isso
   };
+}
+
+function getRequestToken(req: express.Request) {
+  const authHeader = req.headers.authorization || "";
+  const bearer = authHeader.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
+  const headerToken = String(req.headers["x-webhook-token"] || "");
+  return bearer || headerToken;
+}
+
+function requireWebhookAuth(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  if (!WEBHOOK_TOKEN) {
+    console.warn("🟡 SAIBWEB_WEBHOOK_TOKEN não configurado; bloqueando endpoint por segurança.");
+    return res.status(503).json({ ok: false, error: "Webhook token not configured" });
+  }
+
+  const provided = getRequestToken(req);
+  if (!provided || provided !== WEBHOOK_TOKEN) {
+    return res.status(401).json({ ok: false, error: "Unauthorized" });
+  }
+
+  next();
+}
+
+async function recoverStuckOrders() {
+  const safeMinutes = Number.isFinite(PROCESSING_RECOVERY_MINUTES)
+    ? Math.max(1, PROCESSING_RECOVERY_MINUTES)
+    : 20;
+  const cutoffIso = new Date(Date.now() - safeMinutes * 60 * 1000).toISOString();
+
+  console.log(
+    `🩺 Verificando pedidos órfãos em PROCESSING com created_at <= ${cutoffIso}...`
+  );
+
+  const { data: candidates, error: candidatesError } = await supabase
+    .from("orders")
+    .select("id, order_number, created_at")
+    .eq("saibweb_status", "PROCESSING")
+    .lte("created_at", cutoffIso);
+
+  if (candidatesError) {
+    console.error("❌ Falha ao buscar pedidos PROCESSING para recovery:", candidatesError);
+    return;
+  }
+
+  const recoverable = Array.isArray(candidates) ? candidates : [];
+  if (recoverable.length === 0) {
+    console.log("👌 Nenhum pedido PROCESSING antigo o suficiente para recuperar.");
+    return;
+  }
+
+  const idsToRecover = recoverable.map((row: any) => row.id).filter(Boolean);
+
+  const { data: recovered, error } = await supabase
+    .from("orders")
+    .update({
+      saibweb_status: "PENDING",
+      saibweb_error: `Recuperado automaticamente após reinício do serviço webhook (>${safeMinutes} min em PROCESSING).`,
+    })
+    .in("id", idsToRecover)
+    .select("id, order_number");
+
+  if (error) {
+    console.error("❌ Falha ao recuperar pedidos PROCESSING:", error);
+    return;
+  }
+
+  console.log(
+    "♻️ Pedidos recuperados para PENDING:",
+    recovered.map((row: any) => row.order_number || row.id)
+  );
 }
 
 /**
@@ -102,7 +186,7 @@ function runOne(orderId: string) {
 
     const child = spawn(command, args, {
       env: childEnv,
-      cwd: process.cwd(),
+      cwd: PROJECT_ROOT,
       stdio: "inherit",
       shell: false,
     });
@@ -130,13 +214,11 @@ async function processQueue() {
       console.log("➡️ Processando:", next, "| restante:", queue.length);
 
       const result = await runOne(next);
+
       queuedOrRunning.delete(next);
 
-      if (result.ok) {
-        console.log("✅ Finalizado com sucesso.");
-      } else {
-        console.log("⚠️ Finalizado com erro.");
-      }
+      if (result.ok) console.log("✅ Finalizado com sucesso.");
+      else console.log("⚠️ Finalizado com erro.");
     }
   } finally {
     isRunning = false;
@@ -146,49 +228,10 @@ async function processQueue() {
 
 /**
  * =====================
- * GOOGLE SHEETS JOB
- * =====================
- */
-function runSheetSync() {
-  if (sheetSyncRunning) {
-    console.log("🟡 Sync Google Sheets já em execução. Pulando.");
-    return;
-  }
-
-  if (!path.isAbsolute(SHEET_SCRIPT_PATH)) {
-    console.error("❌ SHEET_SCRIPT_PATH inválido:", SHEET_SCRIPT_PATH);
-    return;
-  }
-
-  sheetSyncRunning = true;
-  lastSheetSyncAt = Date.now();
-
-  console.log("📊 Iniciando sync Google Sheets");
-  console.log("▶️", process.execPath, SHEET_SCRIPT_PATH);
-
-  const child = spawn(process.execPath, [SHEET_SCRIPT_PATH], {
-    cwd: PROJECT_ROOT,
-    stdio: "inherit",
-    shell: false,
-  });
-
-  child.on("close", (code) => {
-    sheetSyncRunning = false;
-    console.log("✅ Sync Google Sheets finalizado. code =", code);
-  });
-
-  child.on("error", (err) => {
-    sheetSyncRunning = false;
-    console.error("❌ Erro no sync Google Sheets:", err);
-  });
-}
-
-/**
- * =====================
  * ROTAS
  * =====================
  */
-app.get("/health", (_req, res) => {
+app.get("/health", requireWebhookAuth, (_req, res) => {
   res.json({
     ok: true,
     saibweb: {
@@ -196,16 +239,11 @@ app.get("/health", (_req, res) => {
       queued: queue.length,
       lastRunAt,
     },
-    sheetSync: {
-      running: sheetSyncRunning,
-      lastRunAt: lastSheetSyncAt,
-      intervalMs: SHEET_SYNC_INTERVAL_MS,
-    },
     now: Date.now(),
   });
 });
 
-app.post("/webhook/new-order", (req, res) => {
+app.post("/webhook/new-order", requireWebhookAuth, (req, res) => {
   const orderId = extractOrderId(req.body);
   const r = enqueue(orderId);
 
@@ -225,14 +263,13 @@ app.post("/webhook/new-order", (req, res) => {
  * BOOT
  * =====================
  */
-app.listen(PORT, () => {
-  console.log(`🧩 SAIBWEB webhook rodando em http://localhost:${PORT}`);
-  console.log(`⏱️ Google Sheets sync a cada ${Math.round(SHEET_SYNC_INTERVAL_MS / 1000)}s`);
-  console.log("📄 Script sync:", SHEET_SCRIPT_PATH);
-});
+app.listen(PORT, async () => {
+  if (RECOVER_ON_BOOT) {
+    await recoverStuckOrders().catch((err) => {
+      console.error("❌ Erro ao executar recovery on boot:", err);
+    });
+  }
 
-// ⏱️ inicia o job após subir o servidor
-setTimeout(() => {
-  runSheetSync(); // primeira execução
-  setInterval(runSheetSync, SHEET_SYNC_INTERVAL_MS);
-}, 5_000);
+  console.log(`🧩 SAIBWEB webhook rodando em http://localhost:${PORT}`);
+  console.log(`🔐 Webhook auth: ${WEBHOOK_TOKEN ? "obrigatória" : "token ausente"}`);
+});

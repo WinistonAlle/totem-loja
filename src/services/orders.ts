@@ -16,6 +16,8 @@ type CreateOrderInput = {
 };
 
 const SAIBWEB_WEBHOOK_URL = import.meta.env.VITE_SAIBWEB_WEBHOOK_URL?.trim() || "";
+const SAIBWEB_WEBHOOK_TOKEN = import.meta.env.VITE_SAIBWEB_WEBHOOK_TOKEN?.trim() || "";
+const TOTEM_CONSUMER_DOCUMENT = "TOTEM-CONSUMIDOR";
 
 function toCents(value: any): number {
   const n = Number(value);
@@ -42,12 +44,27 @@ function getProductOldId(product: any): string | number | null {
   return raw;
 }
 
+function getOrderTotalCents(items: OrderItemInput[]): number {
+  return items.reduce((sum, { product, quantity }) => {
+    const qty = Number(quantity);
+    const safeQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
+    return sum + getUnitPriceCents(product) * safeQty;
+  }, 0);
+}
+
+function isTotemConsumerOrder(customerDocument: string): boolean {
+  return customerDocument.trim().toUpperCase() === TOTEM_CONSUMER_DOCUMENT;
+}
+
 async function enqueueSaibwebOrder(orderId: string) {
   if (!SAIBWEB_WEBHOOK_URL) return { queued: false, skipped: true };
 
   const response = await fetch(SAIBWEB_WEBHOOK_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(SAIBWEB_WEBHOOK_TOKEN ? { "x-webhook-token": SAIBWEB_WEBHOOK_TOKEN } : {}),
+    },
     body: JSON.stringify({ order_id: orderId }),
   });
 
@@ -66,7 +83,13 @@ export async function createOrder(input: CreateOrderInput): Promise<{
 }> {
   const customerDocument = (input.customerDocument ?? "").toString().trim();
   const customerName = (input.customerName ?? "").toString().trim();
-  const payOnPickupCents = Number.isFinite(input.payOnPickupCents) ? Math.max(0, Math.round(input.payOnPickupCents ?? 0)) : 0;
+  const paymentMethod = input.paymentMethod ?? "attendant";
+  const isTotemOrder = isTotemConsumerOrder(customerDocument);
+  const payOnPickupCents = Number.isFinite(input.payOnPickupCents)
+    ? Math.max(0, Math.round(input.payOnPickupCents ?? 0))
+    : paymentMethod.startsWith("attendant")
+      ? getOrderTotalCents(input.items)
+      : 0;
 
   if (!customerDocument) throw new Error("customerDocument vazio.");
   if (!customerName) throw new Error("customerName vazio.");
@@ -79,9 +102,7 @@ export async function createOrder(input: CreateOrderInput): Promise<{
       customer_id: input.customerId ?? null,
       customer_document: customerDocument,
       customer_name: customerName,
-      employee_cpf: customerDocument,
-      employee_name: customerName,
-      payment_method: input.paymentMethod ?? "attendant",
+      payment_method: paymentMethod,
       pay_on_pickup_cents: payOnPickupCents,
       wallet_debited: false,
       spent_from_balance_cents: 0,

@@ -13,12 +13,9 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
-  History,
   Bell,
   Package,
   LogOut,
-  LogIn,
-  UserPlus,
   Filter,
   X,
   LayoutGrid,
@@ -41,13 +38,10 @@ const ITEMS_PER_PAGE = 24;
 const PRODUCTS_CACHE_KEY = "gm_catalog_products_v1";
 
 const ROUTES = {
-  lastOrders: "/meus-pedidos",
   reports: "/relatorios",
   notices: "/avisos",
   featured: "/destaques",
   productsCrud: "/admin",
-  login: "/login",
-  signup: "/cadastro",
   start: "/inicio",
   contextoCompra: "/contexto",
 };
@@ -130,6 +124,10 @@ function pickDisplayName(session: any): string {
   const raw = candidates[0] || "Cliente";
   const first = raw.split(/\s+/).filter(Boolean)[0] || raw;
   return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
+function getChannelLabel(channel: ChannelType | null | undefined): string {
+  return channel === "atacado" ? "ATACADO" : "VAREJO";
 }
 
 type CustomerType = "cpf" | "cnpj";
@@ -779,55 +777,20 @@ const Index: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-3">
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        safeNavigate(ROUTES.login);
-                      }}
-                      type="button"
-                      className={authActionBtn("login")}
-                    >
-                      <LogIn className="h-5 w-5 text-white" />
-                      <span className="font-extrabold text-[20px]">Login</span>
-                    </button>
-
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        safeNavigate(ROUTES.signup);
-                      }}
-                      type="button"
-                      className={authActionBtn("signup")}
-                    >
-                      <UserPlus className="h-5 w-5 text-white" />
-                      <span className="font-extrabold text-[20px]">Cadastre-se</span>
-                    </button>
-
-                    <div className="h-px bg-gray-100 my-1" />
+                  <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
+                    <div className="text-[12px] uppercase tracking-[0.14em] text-gray-500 font-black">
+                      Totem
+                    </div>
+                    <div className="mt-2 text-[22px] font-extrabold leading-tight text-gray-900">
+                      Pedido rapido sem cadastro
+                    </div>
+                    <div className="mt-2 text-[15px] text-gray-600 font-semibold">
+                      Preco atual: {getChannelLabel(pricingCtx?.channel)}
+                    </div>
                   </div>
                 )}
 
                 <SwitchPricing />
-
-                <div className="flex flex-col gap-3">
-                  <button
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      safeNavigate(ROUTES.lastOrders);
-                    }}
-                    type="button"
-                    className={selectableBtn(isActiveRoute(ROUTES.lastOrders))}
-                  >
-                    <span className="shrink-0">
-                      <History className="h-5 w-5" />
-                    </span>
-                    <span className="text-[20px] font-extrabold line-clamp-1">Últimos pedidos</span>
-                  </button>
-                </div>
 
                 {isAdmin && (
                   <>
@@ -1130,54 +1093,20 @@ const Index: React.FC = () => {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex flex-col gap-3">
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setSheetOpen(false);
-                            safeNavigate(ROUTES.login);
-                          }}
-                          type="button"
-                          className={authActionBtn("login")}
-                        >
-                          <LogIn className="h-5 w-5 text-white" />
-                          <span className="font-extrabold text-[18px]">Login</span>
-                        </button>
-
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            setSheetOpen(false);
-                            safeNavigate(ROUTES.signup);
-                          }}
-                          type="button"
-                          className={authActionBtn("signup")}
-                        >
-                          <UserPlus className="h-5 w-5 text-white" />
-                          <span className="font-extrabold text-[18px]">Cadastre-se</span>
-                        </button>
+                      <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
+                        <div className="text-[12px] uppercase tracking-[0.14em] text-gray-500 font-black">
+                          Totem
+                        </div>
+                        <div className="mt-2 text-[20px] font-extrabold leading-tight text-gray-900">
+                          Pedido rapido sem cadastro
+                        </div>
+                        <div className="mt-2 text-[14px] text-gray-600 font-semibold">
+                          Preco atual: {getChannelLabel(pricingCtx?.channel)}
+                        </div>
                       </div>
                     )}
 
                     <SwitchPricing compact />
-
-                    <button
-                      type="button"
-                      className={selectableBtn(isActiveRoute(ROUTES.lastOrders))}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setSheetOpen(false);
-                        safeNavigate(ROUTES.lastOrders);
-                      }}
-                    >
-                      <span className="shrink-0">
-                        <History className="h-5 w-5" />
-                      </span>
-                      <span className="text-[18px] font-extrabold line-clamp-1">Últimos pedidos</span>
-                    </button>
 
                     {isAdmin && (
                       <>

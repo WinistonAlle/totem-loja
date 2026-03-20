@@ -227,6 +227,9 @@ export default function Start() {
   function go() {
     try {
       localStorage.removeItem("pricing_context");
+      localStorage.removeItem("customer_session");
+      window.dispatchEvent(new Event("pricing_context_changed"));
+      window.dispatchEvent(new Event("customer_session_changed"));
     } catch {}
     navigate("/contexto");
   }

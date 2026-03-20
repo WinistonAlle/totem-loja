@@ -6,9 +6,8 @@ import { supabase } from "@/lib/supabase";
 type OrderRow = {
   id: string;
   order_number: string | null;
-  employee_id: string | null;
-  employee_cpf: string | null;
-  employee_name: string | null;
+  customer_document: string | null;
+  customer_name: string | null;
 
   total_items: number | null;
   total_value: number | null; // legacy (R$)
@@ -38,8 +37,8 @@ type CancellationLogRow = {
   order_id: string;
   order_number: string | null;
 
-  employee_cpf: string | null;
-  employee_name: string | null;
+  customer_document: string | null;
+  customer_name: string | null;
 
   actor_cpf: string | null;
   actor_name: string | null;
@@ -79,7 +78,23 @@ function onlyDigits(s: string) {
   return (s || "").replace(/\D/g, "");
 }
 
-function formatCPF(raw?: string | null) {
+function formatCustomerDocument(raw?: string | null) {
+  const value = String(raw ?? "").trim();
+  if (!value) return "—";
+  if (value.toUpperCase() === "TOTEM-CONSUMIDOR") return "Totem / Consumidor";
+
+  const digits = onlyDigits(value);
+  if (digits.length === 11) {
+    return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 14) {
+    return `${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}`;
+  }
+
+  return value;
+}
+
+function formatActorCpf(raw?: string | null) {
   const digits = onlyDigits(raw || "").slice(0, 11);
   if (!digits) return "—";
   if (digits.length <= 3) return digits;
@@ -289,7 +304,7 @@ export default function AdminOrders() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  const [cpfFilter, setCpfFilter] = useState("");
+  const [customerFilter, setCustomerFilter] = useState("");
   const [orderFilter, setOrderFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
@@ -375,9 +390,8 @@ export default function AdminOrders() {
         [
           "id",
           "order_number",
-          "employee_id",
-          "employee_cpf",
-          "employee_name",
+          "customer_document",
+          "customer_name",
           "total_items",
           "total_value",
           "total_cents",
@@ -392,8 +406,16 @@ export default function AdminOrders() {
       )
       .order("created_at", { ascending: false });
 
-    const cpf = onlyDigits(cpfFilter);
-    if (cpf) q = q.ilike("employee_cpf", `%${cpf}%`);
+    const customerTerm = customerFilter.trim();
+    const customerDigits = onlyDigits(customerTerm);
+    if (customerTerm) {
+      const filters = [
+        `customer_name.ilike.%${customerTerm}%`,
+        `customer_document.ilike.%${customerTerm}%`,
+      ];
+      if (customerDigits) filters.push(`customer_document.ilike.%${customerDigits}%`);
+      q = q.or(filters.join(","));
+    }
     if (orderFilter.trim()) q = q.ilike("order_number", `%${orderFilter.trim()}%`);
     if (statusFilter) q = q.eq("status", statusFilter);
 
@@ -406,19 +428,7 @@ export default function AdminOrders() {
     }
 
     const list = (Array.isArray(data) ? data : []) as unknown as OrderRow[];
-
-    const needName = list.some((o) => !o.employee_name && o.employee_cpf);
-    if (needName) {
-      const cpfMap = await fetchEmployeeMap();
-      const patched = list.map((o) => {
-        if (o.employee_name) return o;
-        const cpfKey = onlyDigits(o.employee_cpf || "");
-        return { ...o, employee_name: cpfMap.get(cpfKey) ?? null };
-      });
-      setOrders(patched);
-    } else {
-      setOrders(list);
-    }
+    setOrders(list);
 
     setLoading(false);
   }
@@ -492,7 +502,7 @@ export default function AdminOrders() {
       const { data: ords, error: oErr } = await supabase
         .from("orders")
         .select(
-          "id, order_number, employee_cpf, employee_name, total_value, total_cents, wallet_used_cents, spent_from_balance_cents, pay_on_pickup_cents, cancelled_at"
+          "id, order_number, customer_document, customer_name, total_value, total_cents, wallet_used_cents, spent_from_balance_cents, pay_on_pickup_cents, cancelled_at"
         )
         .in("id", orderIds);
 
@@ -503,14 +513,13 @@ export default function AdminOrders() {
 
       const merged: CancellationLogRow[] = actionRows.map((a) => {
         const ord = orderMap.get(a.order_id);
-        const empCpfKey = onlyDigits(ord?.employee_cpf || "");
         const actorCpfKey = onlyDigits(a?.actor_cpf || "");
 
         return {
           order_id: a.order_id,
           order_number: ord?.order_number ?? null,
-          employee_cpf: ord?.employee_cpf ?? null,
-          employee_name: ord?.employee_name ?? cpfMap.get(empCpfKey) ?? null,
+          customer_document: ord?.customer_document ?? null,
+          customer_name: ord?.customer_name ?? null,
           actor_cpf: a?.actor_cpf ?? null,
           actor_name: cpfMap.get(actorCpfKey) ?? null,
           cancelled_at: ord?.cancelled_at ?? a?.created_at ?? null,
@@ -688,13 +697,12 @@ export default function AdminOrders() {
         <section style={styles.filters}>
           <div style={filtersGridStyle}>
             <div style={styles.field}>
-              <label style={styles.label}>CPF</label>
+              <label style={styles.label}>Cliente</label>
               <input
                 style={styles.input}
-                placeholder="Digite o CPF"
-                inputMode="numeric"
-                value={cpfFilter}
-                onChange={(e) => setCpfFilter(e.target.value)}
+                placeholder="Nome ou documento"
+                value={customerFilter}
+                onChange={(e) => setCustomerFilter(e.target.value)}
               />
             </div>
 
@@ -780,7 +788,7 @@ export default function AdminOrders() {
                     <thead>
                       <tr>
                         <th style={styles.th}>Pedido</th>
-                        <th style={styles.th}>Funcionário</th>
+                        <th style={styles.th}>Cliente</th>
                         <th style={styles.th}>Pagamento</th>
                         <th style={styles.th}>Total</th>
                         <th style={styles.th}>Status</th>
@@ -802,8 +810,8 @@ export default function AdminOrders() {
                             </td>
 
                             <td style={styles.td}>
-                              <div style={{ fontWeight: 950 }}>{o.employee_name || "Nome não encontrado"}</div>
-                              <div style={styles.tdMuted}>{formatCPF(o.employee_cpf)}</div>
+                              <div style={{ fontWeight: 950 }}>{o.customer_name || "Cliente não identificado"}</div>
+                              <div style={styles.tdMuted}>{formatCustomerDocument(o.customer_document)}</div>
                             </td>
 
                             <td style={styles.td}>
@@ -849,11 +857,11 @@ export default function AdminOrders() {
                       <div style={styles.mobileTop}>
                         <div style={{ minWidth: 0 }}>
                           <div style={styles.mobileTitle}>{o.order_number || "—"}</div>
-                          <div style={styles.mobileSub} title={o.employee_name || ""}>
+                          <div style={styles.mobileSub} title={o.customer_name || ""}>
                             <b style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {o.employee_name || "Nome não encontrado"}
+                              {o.customer_name || "Cliente não identificado"}
                             </b>{" "}
-                            • {formatCPF(o.employee_cpf)}
+                            • {formatCustomerDocument(o.customer_document)}
                           </div>
                           <div style={styles.mobileSub}>{new Date(o.created_at).toLocaleString("pt-BR")}</div>
                         </div>
@@ -923,7 +931,7 @@ export default function AdminOrders() {
               <div style={{ minWidth: 0 }}>
                 <div style={styles.modalTitle}>Pedido {selected.order_number || "—"}</div>
                 <div style={styles.modalSub}>
-                  {selected.employee_name || "Nome não encontrado"} • {formatCPF(selected.employee_cpf)} •{" "}
+                  {selected.customer_name || "Cliente não identificado"} • {formatCustomerDocument(selected.customer_document)} •{" "}
                   {new Date(selected.created_at).toLocaleString("pt-BR")}
                 </div>
               </div>
@@ -1045,7 +1053,7 @@ export default function AdminOrders() {
                           <div style={styles.historyAction}>{h.action}</div>
                           <div style={styles.historyTime}>{new Date(h.created_at).toLocaleString("pt-BR")}</div>
                         </div>
-                        <div style={styles.historyMeta}>Por: {h.actor_cpf ? formatCPF(h.actor_cpf) : "—"}</div>
+                        <div style={styles.historyMeta}>Por: {h.actor_cpf ? formatActorCpf(h.actor_cpf) : "—"}</div>
                         {h.reason && <div style={styles.historyReason}>{h.reason}</div>}
                       </div>
                     ))}
@@ -1139,7 +1147,7 @@ export default function AdminOrders() {
                           <thead>
                             <tr>
                               <th style={styles.th}>Pedido</th>
-                              <th style={styles.th}>Funcionário</th>
+                              <th style={styles.th}>Cliente</th>
                               <th style={styles.th}>Pagamento</th>
                               <th style={styles.th}>Total</th>
                               <th style={styles.th}>Cancelado em</th>
@@ -1161,8 +1169,8 @@ export default function AdminOrders() {
                                   </td>
 
                                   <td style={styles.td}>
-                                    <div style={{ fontWeight: 950 }}>{r.employee_name || "—"}</div>
-                                    <div style={styles.tdMuted}>{formatCPF(r.employee_cpf)}</div>
+                                    <div style={{ fontWeight: 950 }}>{r.customer_name || "Cliente não identificado"}</div>
+                                    <div style={styles.tdMuted}>{formatCustomerDocument(r.customer_document)}</div>
                                   </td>
 
                                   <td style={styles.td}>
@@ -1178,7 +1186,7 @@ export default function AdminOrders() {
 
                                   <td style={styles.td}>
                                     <div style={{ fontWeight: 900 }}>{r.actor_name || "—"}</div>
-                                    <div style={styles.tdMuted}>{formatCPF(r.actor_cpf)}</div>
+                                    <div style={styles.tdMuted}>{formatActorCpf(r.actor_cpf)}</div>
                                   </td>
 
                                   <td style={styles.td}>
@@ -1202,7 +1210,7 @@ export default function AdminOrders() {
                             <div style={styles.mobileTop}>
                               <div style={{ minWidth: 0 }}>
                                 <div style={styles.mobileTitle}>{r.order_number || "—"}</div>
-                                <div style={styles.mobileSub} title={r.employee_name || ""}>
+                                <div style={styles.mobileSub} title={r.customer_name || ""}>
                                   <b
                                     style={{
                                       display: "inline-block",
@@ -1212,9 +1220,9 @@ export default function AdminOrders() {
                                       whiteSpace: "nowrap",
                                     }}
                                   >
-                                    {r.employee_name || "—"}
+                                    {r.customer_name || "Cliente não identificado"}
                                   </b>{" "}
-                                  • {formatCPF(r.employee_cpf)}
+                                  • {formatCustomerDocument(r.customer_document)}
                                 </div>
 
                                 <div style={styles.mobileSub}>
@@ -1248,7 +1256,7 @@ export default function AdminOrders() {
 
                                 <div style={{ marginTop: 6 }}>
                                   <div style={{ fontSize: 12, fontWeight: 900, color: "#111827" }}>Cancelado por: {r.actor_name || "—"}</div>
-                                  <div style={{ fontSize: 12, opacity: 0.8 }}>{formatCPF(r.actor_cpf)}</div>
+                                  <div style={{ fontSize: 12, opacity: 0.8 }}>{formatActorCpf(r.actor_cpf)}</div>
                                 </div>
 
                                 <div style={{ marginTop: 6 }}>

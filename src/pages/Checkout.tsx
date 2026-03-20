@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { useNavigate } from "react-router-dom";
 import { createOrder } from "@/services/orders";
@@ -18,19 +19,15 @@ function clearCustomerSession() {
   window.dispatchEvent(new Event("pricing_context_changed"));
 }
 
-function safeGetCustomer() {
+function getPricingChannel(): "varejo" | "atacado" {
   try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
+    const raw = localStorage.getItem("pricing_context");
+    if (!raw) return "varejo";
+    const parsed = JSON.parse(raw);
+    return parsed?.channel === "atacado" ? "atacado" : "varejo";
   } catch {
-    return {};
+    return "varejo";
   }
-}
-
-function onlyDigits(v: any) {
-  return (v ?? "").toString().replace(/\D/g, "").trim();
 }
 
 function formatBRLFromCents(cents: number) {
@@ -129,6 +126,7 @@ const Checkout: React.FC = () => {
   const navigate = useNavigate();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customerName, setCustomerName] = useState("");
 
   const safeCartTotal = Number.isFinite(cartTotal) ? cartTotal : 0;
   const totalCents = useMemo(() => Math.round(safeCartTotal * 100), [safeCartTotal]);
@@ -175,22 +173,22 @@ const Checkout: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const customer: any = safeGetCustomer();
-      const sessionDocRaw = customer?.document ?? customer?.cpf ?? customer?.cpf_cnpj ?? "";
-      const sessionNameRaw = customer?.name ?? customer?.full_name ?? "";
+      const trimmedCustomerName = customerName.trim();
+      const pricingChannel = getPricingChannel();
 
-      const docDigits = onlyDigits(sessionDocRaw);
-
-      const customerDocument = docDigits || "TOTEM";
-      const customerName = (sessionNameRaw || (docDigits ? "Cliente" : "Cliente Totem")).toString().trim();
-
-      const paymentMethod = "attendant";
+      if (!trimmedCustomerName) {
+        toast.error("Digite seu nome", {
+          description: "Precisamos do seu nome para identificar o pedido no balcão.",
+        });
+        setIsSubmitting(false);
+        return;
+      }
 
       const { orderId, orderNumber } = await createOrder({
         customerId: null,
-        customerDocument,
-        customerName,
-        paymentMethod,
+        customerDocument: "TOTEM-CONSUMIDOR",
+        customerName: trimmedCustomerName,
+        paymentMethod: `attendant_${pricingChannel}`,
         payOnPickupCents: totalCents,
         items: cartItems.map((ci) => ({ product: ci.product, quantity: ci.quantity })),
       });
@@ -394,6 +392,39 @@ const Checkout: React.FC = () => {
           </div>
 
           <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-3">
+            <div className="mb-4 rounded-[22px] sm:rounded-[28px] border bg-white overflow-hidden">
+              <div className="px-4 sm:px-5 py-3 sm:py-[15px] border-b bg-white">
+                <p className="text-lg sm:text-xl font-extrabold">Identificação do pedido</p>
+                <p className="mt-1 text-[14px] sm:text-[16px] text-gray-600">
+                  O pedido vai para o cliente fixo CONSUMIDOR. Digite apenas seu nome para a atendente localizar.
+                </p>
+              </div>
+
+              <div className="px-4 sm:px-5 py-4 sm:py-5 space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="customer-name" className="block text-[15px] sm:text-[17px] font-extrabold text-gray-900">
+                    Seu nome
+                  </label>
+                  <Input
+                    id="customer-name"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="Ex.: Joao Silva"
+                    maxLength={80}
+                    className="h-14 sm:h-16 rounded-[16px] sm:rounded-[18px] text-[18px] sm:text-[22px] font-semibold"
+                    disabled={isSubmitting || successOpen}
+                  />
+                </div>
+
+                <div className="rounded-[16px] sm:rounded-[20px] bg-zinc-50 border px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between gap-3">
+                  <span className="text-[14px] sm:text-[16px] font-semibold text-gray-600">Preço aplicado</span>
+                  <span className="text-[16px] sm:text-[18px] font-black uppercase">
+                    {getPricingChannel()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-[22px] sm:rounded-[28px] border bg-white overflow-hidden">
               <div className="px-4 sm:px-5 py-3 sm:py-[15px] border-b bg-white flex items-center justify-between gap-3">
                 <p className="text-lg sm:text-xl font-extrabold">Itens</p>

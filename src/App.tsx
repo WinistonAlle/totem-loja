@@ -17,7 +17,6 @@ import Cadastro from "./pages/Cadastro";
 import Index from "./pages/Index";
 import Avisos from "./pages/Avisos";
 import Checkout from "./pages/Checkout";
-import MyOrdersPage from "./pages/MyOrdersPage";
 import NotFound from "./pages/NotFound";
 
 // ✅ Favoritos
@@ -443,23 +442,9 @@ function AppRoutes() {
           }
         />
 
-        <Route
-          path="/meus-pedidos"
-          element={
-            <RequireAuth>
-              <MyOrdersPage />
-            </RequireAuth>
-          }
-        />
+        <Route path="/meus-pedidos" element={<Navigate to="/inicio" replace />} />
 
-        <Route
-          path="/checkout"
-          element={
-            <RequireAuth>
-              <Checkout />
-            </RequireAuth>
-          }
-        />
+        <Route path="/checkout" element={<Checkout />} />
 
         <Route
           path="/admin"
