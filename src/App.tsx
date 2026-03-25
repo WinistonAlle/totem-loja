@@ -1,42 +1,32 @@
 // src/App.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import AppErrorBoundary from "@/components/AppErrorBoundary";
+import { recordSystemEvent } from "@/lib/systemEvents";
 
 import { CartProvider } from "@/contexts/CartContext";
 import { useCart } from "@/contexts/CartContext";
 import { supabase } from "@/lib/supabase";
 
-// Páginas base
-import Login from "./pages/Login";
-import Cadastro from "./pages/Cadastro";
-import Index from "./pages/Index";
-import Avisos from "./pages/Avisos";
-import Checkout from "./pages/Checkout";
-import NotFound from "./pages/NotFound";
-
-// ✅ Favoritos
-import FavoritesPage from "./pages/Favorites";
-
-// ✅ Destaques (Cliente)
-import Destaques from "./pages/Destaques";
-
-// ✅ Tela inicial estilo Totem
-import Start from "./pages/Start";
-
-// ✅ Questionário de contexto de compra
-import ContextoCompra from "./pages/ContextoCompra";
-
-// Admin / Relatórios
-import Admin from "./pages/Admin";
-import ReportsDashboard from "./pages/ReportsDashboard";
-
-// ✅ AdminOrders
-import AdminOrders from "./pages/AdminOrders";
+const Login = lazy(() => import("./pages/Login"));
+const Cadastro = lazy(() => import("./pages/Cadastro"));
+const Index = lazy(() => import("./pages/Index"));
+const Checkout = lazy(() => import("./pages/Checkout"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Start = lazy(() => import("./pages/Start"));
+const ContextoCompra = lazy(() => import("./pages/ContextoCompra"));
+const Avisos = lazy(() => import("./pages/Avisos"));
+const FavoritesPage = lazy(() => import("./pages/Favorites"));
+const Destaques = lazy(() => import("./pages/Destaques"));
+const Admin = lazy(() => import("./pages/Admin"));
+const ReportsDashboard = lazy(() => import("./pages/ReportsDashboard"));
+const AdminOrders = lazy(() => import("./pages/AdminOrders"));
+const SystemDiagnostics = lazy(() => import("./pages/SystemDiagnostics"));
 
 const queryClient = new QueryClient();
 
@@ -136,8 +126,6 @@ function RequireRole({
     };
   }, []);
 
-  const allowKey = useMemo(() => allow.join("|"), [allow]);
-
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
 
@@ -213,7 +201,7 @@ function RequireRole({
     return () => {
       alive = false;
     };
-  }, [tick, allowKey, redirectTo]);
+  }, [tick, allow, redirectTo]);
 
   if (loading) return null;
   if (!allowed) return <Navigate to={redirectTo} replace />;
@@ -400,88 +388,170 @@ function GlobalInactivityGuard() {
 function AppRoutes() {
   return (
     <>
-      <Routes>
-        {/* ✅ abre no totem */}
-        <Route path="/" element={<RootRedirect />} />
+      <Suspense
+        fallback={
+          <div className="min-h-[100dvh] grid place-items-center bg-white text-gray-500 font-semibold">
+            Carregando...
+          </div>
+        }
+      >
+        <Routes>
+          {/* ✅ abre no totem */}
+          <Route path="/" element={<RootRedirect />} />
 
-        {/* ✅ fluxo do totem */}
-        <Route path="/inicio" element={<Start />} />
-        <Route path="/contexto" element={<ContextoCompra />} />
+          {/* ✅ fluxo do totem */}
+          <Route path="/inicio" element={<Start />} />
+          <Route path="/contexto" element={<ContextoCompra />} />
 
-        {/* ✅ catálogo NÃO exige login (login/cadastro ficam como opção dentro dele) */}
-        <Route path="/catalogo" element={<Index />} />
+          {/* ✅ catálogo NÃO exige login (login/cadastro ficam como opção dentro dele) */}
+          <Route path="/catalogo" element={<Index />} />
 
-        {/* auth */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/cadastro" element={<Cadastro />} />
+          {/* auth */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/cadastro" element={<Cadastro />} />
 
-        <Route
-          path="/destaques"
-          element={
-            <RequireAuth>
-              <Destaques />
-            </RequireAuth>
-          }
-        />
+          <Route
+            path="/destaques"
+            element={
+              <RequireAuth>
+                <Destaques />
+              </RequireAuth>
+            }
+          />
 
-        <Route
-          path="/favoritos"
-          element={
-            <RequireAuth>
-              <FavoritesPage />
-            </RequireAuth>
-          }
-        />
+          <Route
+            path="/favoritos"
+            element={
+              <RequireAuth>
+                <FavoritesPage />
+              </RequireAuth>
+            }
+          />
 
-        <Route
-          path="/avisos"
-          element={
-            <RequireAuth>
-              <Avisos />
-            </RequireAuth>
-          }
-        />
+          <Route
+            path="/avisos"
+            element={
+              <RequireAuth>
+                <Avisos />
+              </RequireAuth>
+            }
+          />
 
-        <Route path="/meus-pedidos" element={<Navigate to="/inicio" replace />} />
+          <Route path="/meus-pedidos" element={<Navigate to="/inicio" replace />} />
 
-        <Route path="/checkout" element={<Checkout />} />
+          <Route path="/checkout" element={<Checkout />} />
 
-        <Route
-          path="/admin"
-          element={
-            <RequireRole allow={["admin"]} redirectTo="/catalogo">
-              <Admin />
-            </RequireRole>
-          }
-        />
+          <Route
+            path="/diagnostico"
+            element={
+              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+                <SystemDiagnostics />
+              </RequireRole>
+            }
+          />
 
-        <Route
-          path="/admin/pedidos"
-          element={
-            <RequireRole allow={["admin"]} redirectTo="/catalogo">
-              <AdminOrders />
-            </RequireRole>
-          }
-        />
+          <Route
+            path="/admin"
+            element={
+              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+                <Admin />
+              </RequireRole>
+            }
+          />
 
-        <Route path="/pedidosadmin" element={<Navigate to="/admin/pedidos" replace />} />
-        <Route path="/adminorders" element={<Navigate to="/admin/pedidos" replace />} />
+          <Route
+            path="/admin/pedidos"
+            element={
+              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+                <AdminOrders />
+              </RequireRole>
+            }
+          />
 
-        <Route
-          path="/relatorios"
-          element={
-            <RequireRole allow={["admin"]} redirectTo="/catalogo">
-              <ReportsDashboard />
-            </RequireRole>
-          }
-        />
+          <Route path="/pedidosadmin" element={<Navigate to="/admin/pedidos" replace />} />
+          <Route path="/adminorders" element={<Navigate to="/admin/pedidos" replace />} />
 
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+          <Route
+            path="/relatorios"
+            element={
+              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+                <ReportsDashboard />
+              </RequireRole>
+            }
+          />
+
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
 
       <GlobalInactivityGuard />
     </>
   );
+}
+
+function SystemTelemetryBootstrap() {
+  useEffect(() => {
+    void recordSystemEvent({
+      eventName: "app_boot",
+      severity: "info",
+      message: "Totem iniciado.",
+      payload: {
+        path: window.location.pathname,
+      },
+    });
+
+    const onOnline = () => {
+      void recordSystemEvent({
+        eventName: "network_online",
+        severity: "info",
+        message: "Conexao com a internet restabelecida.",
+      });
+    };
+
+    const onOffline = () => {
+      void recordSystemEvent({
+        eventName: "network_offline",
+        severity: "warning",
+        message: "Totem ficou offline.",
+      });
+    };
+
+    const onError = (event: ErrorEvent) => {
+      void recordSystemEvent({
+        eventName: "app_runtime_error",
+        severity: "error",
+        message: event.message || "Erro global nao tratado.",
+        payload: {
+          filename: event.filename,
+          line: event.lineno,
+          column: event.colno,
+        },
+      });
+    };
+
+    const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      void recordSystemEvent({
+        eventName: "app_unhandled_rejection",
+        severity: "error",
+        message: String(reason?.message ?? reason ?? "Promise rejeitada sem tratamento."),
+      });
+    };
+
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onUnhandledRejection);
+
+    return () => {
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onUnhandledRejection);
+    };
+  }, []);
+
+  return null;
 }
 
 /* --------------------------------------------------------
@@ -489,18 +559,21 @@ function AppRoutes() {
 -------------------------------------------------------- */
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
+    <AppErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
 
-        <CartProvider>
-          <BrowserRouter>
-            <AppRoutes />
-          </BrowserRouter>
-        </CartProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+          <CartProvider>
+            <BrowserRouter>
+              <SystemTelemetryBootstrap />
+              <AppRoutes />
+            </BrowserRouter>
+          </CartProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AppErrorBoundary>
   );
 }
 

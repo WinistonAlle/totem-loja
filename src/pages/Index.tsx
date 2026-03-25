@@ -1,5 +1,5 @@
 // src/pages/Index.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { Product } from "../types/products";
@@ -8,6 +8,7 @@ import CartToggle from "../components/CartToggle";
 import Cart from "../components/Cart";
 import { normalizeText as normalizeTextUtil } from "@/utils/stringUtils";
 import { useCart } from "@/contexts/CartContext";
+import { recordSystemEvent } from "@/lib/systemEvents";
 
 import {
   Search,
@@ -35,7 +36,9 @@ const CATEGORY_NAME_BY_ID: Record<number, string> = {
 };
 
 const ITEMS_PER_PAGE = 24;
-const PRODUCTS_CACHE_KEY = "gm_catalog_products_v1";
+const PRODUCTS_CACHE_KEY = "gm_catalog_products_v2";
+const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
+const WHOLESALE_WEIGHT_THRESHOLD_KG = 15;
 
 const ROUTES = {
   reports: "/relatorios",
@@ -130,6 +133,20 @@ function getChannelLabel(channel: ChannelType | null | undefined): string {
   return channel === "atacado" ? "ATACADO" : "VAREJO";
 }
 
+function getCustomerTypeForChannel(channel: ChannelType): CustomerType {
+  return channel === "atacado" ? "cnpj" : "cpf";
+}
+
+function buildPricingContext(channel: ChannelType) {
+  const customer_type = getCustomerTypeForChannel(channel);
+  return {
+    customer_type,
+    channel,
+    price_table: `${channel.toUpperCase()}_${customer_type.toUpperCase()}`,
+    created_at: new Date().toISOString(),
+  };
+}
+
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
 
@@ -175,6 +192,12 @@ interface Notice {
   image_url?: string | null;
 }
 
+type ProductsCachePayload = {
+  version: number;
+  cachedAt: number;
+  items: Product[];
+};
+
 /* --------------------------------------------------------
    PAGE
 -------------------------------------------------------- */
@@ -182,7 +205,7 @@ const Index: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { clearCart, closeCart, repriceCartFromPricingContext } = useCart();
+  const { clearCart, closeCart, repriceCartFromPricingContext, totalWeight } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -234,7 +257,8 @@ const Index: React.FC = () => {
     };
   }, []);
 
-  const session = useMemo(() => safeGetCustomer() as any, [sessionTick]);
+  void sessionTick;
+  const session = safeGetCustomer() as any;
 
   const isLoggedIn = useMemo(() => {
     return Boolean(
@@ -294,7 +318,19 @@ const Index: React.FC = () => {
   /* --------------------------------------------------------
      SWITCH ATACADO/VAREJO
   -------------------------------------------------------- */
-  const pricingCtx = useMemo(() => safeGetPricingContext(), [pricingTick]);
+  void pricingTick;
+  const pricingCtx = safeGetPricingContext();
+
+  const applyPricingChannel = useCallback((nextChannel: ChannelType) => {
+    const next = buildPricingContext(nextChannel);
+
+    try {
+      localStorage.setItem("pricing_context", JSON.stringify(next));
+      window.dispatchEvent(new Event("pricing_context_changed"));
+    } catch {}
+
+    repriceCartFromPricingContext();
+  }, [repriceCartFromPricingContext]);
 
   const handleToggleChannel = () => {
     const ctx = safeGetPricingContext();
@@ -304,20 +340,17 @@ const Index: React.FC = () => {
     }
 
     const nextChannel: ChannelType = ctx.channel === "varejo" ? "atacado" : "varejo";
-    const next = {
-      customer_type: ctx.customer_type,
-      channel: nextChannel,
-      price_table: `${nextChannel.toUpperCase()}_${ctx.customer_type.toUpperCase()}`,
-      created_at: new Date().toISOString(),
-    };
-
-    try {
-      localStorage.setItem("pricing_context", JSON.stringify(next));
-      window.dispatchEvent(new Event("pricing_context_changed"));
-    } catch {}
-
-    repriceCartFromPricingContext();
+    applyPricingChannel(nextChannel);
   };
+
+  useEffect(() => {
+    if (!pricingCtx) return;
+
+    const nextChannel: ChannelType = totalWeight >= WHOLESALE_WEIGHT_THRESHOLD_KG ? "atacado" : "varejo";
+    if (pricingCtx.channel === nextChannel) return;
+
+    applyPricingChannel(nextChannel);
+  }, [applyPricingChannel, pricingCtx, totalWeight]);
 
   const SwitchPricing: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
     if (!pricingCtx) return null;
@@ -494,19 +527,40 @@ const Index: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
+    let cacheServed = false;
 
     try {
       const cached = localStorage.getItem(PRODUCTS_CACHE_KEY);
       if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          setProducts(parsed);
+        const parsed = JSON.parse(cached) as ProductsCachePayload | Product[];
+        const now = Date.now();
+        const isLegacyCache = Array.isArray(parsed);
+        const cacheItems = isLegacyCache ? parsed : parsed?.items;
+        const cachedAt = isLegacyCache ? 0 : Number(parsed?.cachedAt ?? 0);
+        const isFresh = now - cachedAt <= PRODUCTS_CACHE_TTL_MS;
+
+        if (Array.isArray(cacheItems) && cacheItems.length > 0 && isFresh) {
+          setProducts(cacheItems);
           setLoading(false);
+          cacheServed = true;
+          void recordSystemEvent({
+            eventName: "catalog_cache_hit",
+            severity: "info",
+            message: "Catalogo carregado do cache local.",
+            payload: {
+              items: cacheItems.length,
+              cacheAgeMs: now - cachedAt,
+            },
+          });
+        } else {
+          localStorage.removeItem(PRODUCTS_CACHE_KEY);
         }
       }
     } catch {}
 
     async function loadProducts() {
+      const startedAt = Date.now();
+
       try {
         setLoading(true);
 
@@ -520,22 +574,57 @@ const Index: React.FC = () => {
           if (isMissingRelation(error)) {
             setProducts([]);
             setLoadError('Tabela "products" ainda não existe nesse banco (ou está sem acesso).');
+            void recordSystemEvent({
+              eventName: "catalog_load_failure",
+              severity: "error",
+              message: 'Tabela "products" indisponivel para o totem.',
+            });
             return;
           }
           setLoadError(error.message);
+          void recordSystemEvent({
+            eventName: "catalog_load_failure",
+            severity: "error",
+            message: error.message,
+          });
           return;
         }
 
         const mapped: Product[] = ((data as any[]) ?? []).map(mapRowToProduct);
         setProducts(mapped);
         setLoadError(null);
+        void recordSystemEvent({
+          eventName: "catalog_load_success",
+          severity: "info",
+          message: cacheServed
+            ? "Catalogo atualizado em segundo plano apos uso do cache local."
+            : "Catalogo carregado do banco com sucesso.",
+          payload: {
+            items: mapped.length,
+            durationMs: Date.now() - startedAt,
+            cacheServed,
+          },
+        });
 
         try {
-          localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(mapped));
+          const payload: ProductsCachePayload = {
+            version: 2,
+            cachedAt: Date.now(),
+            items: mapped,
+          };
+          localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(payload));
         } catch {}
       } catch (err: any) {
         if (!mounted) return;
         setLoadError(String(err?.message ?? err));
+        void recordSystemEvent({
+          eventName: "catalog_load_failure",
+          severity: "error",
+          message: String(err?.message ?? err ?? "Falha ao carregar catalogo."),
+          payload: {
+            durationMs: Date.now() - startedAt,
+          },
+        });
       } finally {
         if (mounted) setLoading(false);
       }
@@ -577,7 +666,7 @@ const Index: React.FC = () => {
 
       return matchesSearch && matchesCategory;
     });
-  }, [products, debouncedSearchTerm, selectedCategory, pricingTick]);
+  }, [products, debouncedSearchTerm, selectedCategory]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
   const paginated = useMemo(

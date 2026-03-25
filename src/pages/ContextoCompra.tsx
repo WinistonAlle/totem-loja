@@ -1,5 +1,5 @@
 // src/pages/ContextoCompra.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled from "styled-components";
 import { Bg } from "@/components/ui/app-surface";
@@ -145,50 +145,10 @@ const OptionBtn = styled.button`
   }
 `;
 
-/* ---------------- Lock Overlay (landscape) ---------------- */
-const RotateOverlay = styled.div<{ $show: boolean }>`
-  position: fixed;
-  inset: 0;
-  z-index: 99999;
-  display: ${({ $show }) => ($show ? "flex" : "none")};
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-
-  background: rgba(10, 10, 10, 0.92);
-  color: #fff;
-  text-align: center;
-
-  .box {
-    width: min(560px, 92vw);
-    border-radius: 22px;
-    padding: 22px 18px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.14);
-  }
-
-  h2 {
-    margin: 0 0 10px;
-    font-size: 22px;
-    font-weight: 1000;
-    letter-spacing: -0.02em;
-  }
-
-  p {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 750;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.35;
-  }
-`;
-
 /* ================= PAGE ================= */
 
 export default function ContextoCompra() {
   const navigate = useNavigate();
-
-  const [isLandscape, setIsLandscape] = useState(false);
 
   // ✅ trava scroll do documento inteiro (iOS/Android/Safari)
   useEffect(() => {
@@ -216,22 +176,6 @@ export default function ContextoCompra() {
       body.style.position = prevBodyPosition;
       body.style.width = prevBodyWidth;
       (body.style as any).touchAction = prevBodyTouchAction;
-    };
-  }, []);
-
-  // ✅ bloqueia uso em horizontal (mostra overlay)
-  useEffect(() => {
-    const check = () => {
-      setIsLandscape(window.innerWidth > window.innerHeight);
-    };
-    check();
-
-    window.addEventListener("resize", check);
-    window.addEventListener("orientationchange", check as any);
-
-    return () => {
-      window.removeEventListener("resize", check);
-      window.removeEventListener("orientationchange", check as any);
     };
   }, []);
 
@@ -278,13 +222,6 @@ export default function ContextoCompra() {
           </>
         </Content>
       </Screen>
-
-      <RotateOverlay $show={isLandscape}>
-        <div className="box">
-          <h2>Use o totem na vertical</h2>
-          <p>Por favor, gire a tela para continuar.</p>
-        </div>
-      </RotateOverlay>
     </>
   );
 }

@@ -91,7 +91,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
     };
   }, []);
 
-  const ctx = useMemo(() => getPricingContext(), [pricingTick]);
+  void pricingTick;
+  const ctx = getPricingContext();
 
   // ✅ preço conforme contexto (cpf/cnpj + atacado/varejo)
   const price = useMemo(() => resolveProductPrice(product, ctx), [product, ctx]);

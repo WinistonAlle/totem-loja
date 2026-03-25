@@ -8,33 +8,32 @@ export function useIsAdmin() {
   const [reason, setReason] = useState<string | null>(null);
 
   useEffect(() => {
-    let mounted = true;
+    const updateAdminState = (value: unknown) => {
+      const nextIsAdmin = value === true;
+      setIsAdmin(nextIsAdmin);
+      setReason(nextIsAdmin ? null : "não é admin");
+    };
 
     (async () => {
       const { data: userData, error: uErr } = await supabase.auth.getUser();
       if (uErr) console.warn("getUser error:", uErr.message);
 
       if (!userData?.user) {
-        if (mounted) {
-          setIsAdmin(false);
-          setReason("sem usuário logado");
-          setLoading(false);
-        }
+        setIsAdmin(false);
+        setReason("sem usuário logado");
+        setLoading(false);
         return;
       }
 
       const { data, error } = await supabase.rpc("is_current_admin");
-      if (mounted) {
-        if (error) {
-          console.warn("RPC is_current_admin error:", error.message);
-          setIsAdmin(false);
-          setReason("erro RPC");
-        } else {
-          setIsAdmin(Boolean(data));
-          setReason(Boolean(data) ? null : "não é admin");
-        }
-        setLoading(false);
+      if (error) {
+        console.warn("RPC is_current_admin error:", error.message);
+        setIsAdmin(false);
+        setReason("erro RPC");
+      } else {
+        updateAdminState(data);
       }
+      setLoading(false);
     })();
 
     const { data: sub } = supabase.auth.onAuthStateChange(async () => {
@@ -43,8 +42,7 @@ export function useIsAdmin() {
         setIsAdmin(false);
         setReason("erro RPC");
       } else {
-        setIsAdmin(Boolean(data));
-        setReason(Boolean(data) ? null : "não é admin");
+        updateAdminState(data);
       }
     });
 

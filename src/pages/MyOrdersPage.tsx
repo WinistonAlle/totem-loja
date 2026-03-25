@@ -538,7 +538,7 @@ const MyOrdersPage: React.FC = () => {
         const pidRaw = it.product_id == null ? "" : String(it.product_id).trim();
         const nameKey = normalizeForSearch(it.product_name ?? "");
 
-        let product: Product | undefined =
+        const product: Product | undefined =
           (pidRaw ? prodById.get(pidRaw) ?? prodByOldId.get(pidRaw) : undefined) ??
           (nameKey ? prodByName.get(nameKey) : undefined);
 

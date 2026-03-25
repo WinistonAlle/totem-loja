@@ -6,7 +6,6 @@
 -- 3) It includes legacy/customer/admin helpers still referenced by the codebase.
 
 begin;
-
 create extension if not exists pgcrypto;
 
 -- =========================================================
@@ -215,6 +214,19 @@ create table if not exists public.order_admin_actions (
 
 create index if not exists order_admin_actions_order_id_idx on public.order_admin_actions(order_id, created_at desc);
 
+create table if not exists public.app_events (
+  id uuid primary key default gen_random_uuid(),
+  event_name text not null,
+  severity text not null default 'info',
+  message text not null,
+  payload jsonb,
+  source text not null default 'totem',
+  created_at timestamptz not null default timezone('utc', now())
+);
+
+create index if not exists app_events_created_at_idx on public.app_events(created_at desc);
+create index if not exists app_events_event_name_idx on public.app_events(event_name, created_at desc);
+
 create table if not exists public.notices (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -369,6 +381,144 @@ drop trigger if exists trg_order_items_after_delete on public.order_items;
 create trigger trg_order_items_after_delete
 after delete on public.order_items
 for each row execute function public.order_items_after_change();
+
+create or replace function public.create_order_v1(
+  p_customer_id uuid default null,
+  p_customer_document text default null,
+  p_customer_name text default null,
+  p_payment_method text default 'attendant',
+  p_pay_on_pickup_cents integer default null,
+  p_items jsonb default '[]'::jsonb
+)
+returns table (
+  order_id uuid,
+  order_number text,
+  total_cents integer,
+  pay_on_pickup_cents integer,
+  status text
+)
+language plpgsql
+as $$
+declare
+  v_order_id uuid;
+  v_payment_method text := coalesce(nullif(btrim(p_payment_method), ''), 'attendant');
+  v_channel text := case when lower(coalesce(p_payment_method, '')) like '%atacado%' then 'atacado' else 'varejo' end;
+  v_items_count integer := 0;
+  v_inserted_count integer := 0;
+  v_total_cents integer := 0;
+  v_pay_on_pickup integer := 0;
+begin
+  if p_customer_document is null or btrim(p_customer_document) = '' then
+    raise exception 'customerDocument vazio.';
+  end if;
+
+  if p_customer_name is null or btrim(p_customer_name) = '' then
+    raise exception 'customerName vazio.';
+  end if;
+
+  if p_items is null or jsonb_typeof(p_items) <> 'array' then
+    raise exception 'Pedido sem itens.';
+  end if;
+
+  v_items_count := jsonb_array_length(p_items);
+  if v_items_count = 0 then
+    raise exception 'Pedido sem itens.';
+  end if;
+
+  insert into public.orders (
+    customer_id,
+    customer_document,
+    customer_name,
+    payment_method,
+    wallet_debited,
+    spent_from_balance_cents,
+    status,
+    saibweb_status,
+    saibweb_error
+  )
+  values (
+    p_customer_id,
+    btrim(p_customer_document),
+    btrim(p_customer_name),
+    v_payment_method,
+    false,
+    0,
+    'aguardando_atendimento',
+    'PENDING',
+    null
+  )
+  returning id into v_order_id;
+
+  insert into public.order_items (
+    order_id,
+    product_id,
+    product_old_id,
+    product_name,
+    quantity,
+    unit_price_cents
+  )
+  select
+    v_order_id,
+    p.id,
+    nullif(p.old_id::text, ''),
+    coalesce(nullif(p.name, ''), 'Produto'),
+    floor(i.quantity)::integer,
+    case
+      when v_channel = 'atacado' and coalesce(p.price_cnpj_atacado, 0) > 0 then round(p.price_cnpj_atacado * 100)::integer
+      when v_channel = 'varejo' and coalesce(p.price_cpf_varejo, 0) > 0 then round(p.price_cpf_varejo * 100)::integer
+      when coalesce(p.price, 0) > 0 then round(p.price * 100)::integer
+      when coalesce(p.employee_price, 0) > 0 then round(p.employee_price * 100)::integer
+      else 0
+    end
+  from jsonb_to_recordset(p_items) as i(product_id uuid, quantity numeric)
+  join public.products p on p.id = i.product_id
+  where i.quantity is not null
+    and floor(i.quantity) > 0;
+
+  get diagnostics v_inserted_count = row_count;
+
+  if v_inserted_count <> v_items_count then
+    raise exception 'Produto inválido ou desatualizado no carrinho.';
+  end if;
+
+  perform public.refresh_order_totals(v_order_id);
+
+  select o.total_cents
+    into v_total_cents
+  from public.orders o
+  where o.id = v_order_id;
+
+  if v_total_cents <= 0 then
+    raise exception 'Pedido sem valor válido.';
+  end if;
+
+  if lower(v_payment_method) like 'attendant%' and p_pay_on_pickup_cents is not null and p_pay_on_pickup_cents <> v_total_cents then
+    raise exception 'Os preços do carrinho foram atualizados. Revise os itens antes de confirmar.';
+  end if;
+
+  v_pay_on_pickup := coalesce(
+    p_pay_on_pickup_cents,
+    case when lower(v_payment_method) like 'attendant%' then v_total_cents else 0 end
+  );
+
+  update public.orders
+     set pay_on_pickup_cents = greatest(v_pay_on_pickup, 0),
+         wallet_used_cents = 0,
+         spent_from_balance_cents = 0,
+         updated_at = timezone('utc', now())
+   where id = v_order_id;
+
+  return query
+  select
+    o.id,
+    o.order_number,
+    o.total_cents,
+    o.pay_on_pickup_cents,
+    o.status
+  from public.orders o
+  where o.id = v_order_id;
+end;
+$$;
 
 -- =========================================================
 -- RPC / FUNCTIONS USED BY THE APP
@@ -639,6 +789,7 @@ alter table public.weight enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.order_admin_actions enable row level security;
+alter table public.app_events enable row level security;
 alter table public.notices enable row level security;
 alter table public.favorites enable row level security;
 alter table public.featured_products enable row level security;
@@ -673,6 +824,9 @@ create policy "local all order_items" on public.order_items for all using (true)
 
 drop policy if exists "local all order_admin_actions" on public.order_admin_actions;
 create policy "local all order_admin_actions" on public.order_admin_actions for all using (true) with check (true);
+
+drop policy if exists "local all app_events" on public.app_events;
+create policy "local all app_events" on public.app_events for all using (true) with check (true);
 
 drop policy if exists "local all notices" on public.notices;
 create policy "local all notices" on public.notices for all using (true) with check (true);

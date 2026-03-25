@@ -1,5 +1,5 @@
 // src/pages/AdminOrders.tsx
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 
@@ -380,7 +380,7 @@ export default function AdminOrders() {
     return map;
   }
 
-  async function loadOrders() {
+  const loadOrders = useCallback(async () => {
     setLoading(true);
     setErr(null);
 
@@ -431,7 +431,7 @@ export default function AdminOrders() {
     setOrders(list);
 
     setLoading(false);
-  }
+  }, [customerFilter, orderFilter, statusFilter]);
 
   async function loadHistory(orderId: string) {
     setHistoryLoading(true);
@@ -544,7 +544,7 @@ export default function AdminOrders() {
   useEffect(() => {
     if (!isAdmin && !isRH) return;
     loadOrders();
-  }, [isAdmin, isRH]);
+  }, [isAdmin, isRH, loadOrders]);
 
   useEffect(() => {
     if (selected) loadHistory(selected.id);

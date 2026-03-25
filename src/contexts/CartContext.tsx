@@ -217,15 +217,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const next = getCustomerSignature();
       setCustomerSignature(next);
     };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "customer_session") updateSig();
+    };
 
     window.addEventListener("customer_session_changed" as any, updateSig);
-    window.addEventListener("storage", (e: StorageEvent) => {
-      if (e.key === "customer_session") updateSig();
-    });
+    window.addEventListener("storage", onStorage);
 
     return () => {
       window.removeEventListener("customer_session_changed" as any, updateSig);
-      window.removeEventListener("storage", updateSig as any);
+      window.removeEventListener("storage", onStorage);
     };
   }, []);
 
@@ -295,7 +296,6 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const onPricing = () => repriceCartFromPricingContext();
     window.addEventListener("pricing_context_changed" as any, onPricing);
     return () => window.removeEventListener("pricing_context_changed" as any, onPricing);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ===================== totais ===================== */

@@ -184,7 +184,7 @@ const Checkout: React.FC = () => {
         return;
       }
 
-      const { orderId, orderNumber } = await createOrder({
+      const { orderId, orderNumber, saibwebQueued, saibwebError } = await createOrder({
         customerId: null,
         customerDocument: "TOTEM-CONSUMIDOR",
         customerName: trimmedCustomerName,
@@ -196,12 +196,20 @@ const Checkout: React.FC = () => {
       if (!orderId) throw new Error("Falha ao criar pedido (orderId vazio).");
 
       setSuccessTitle("Pedido enviado!");
-      setSuccessSubtitle(`Pedido ${orderNumber ?? `#${orderId}`} enviado. Vá ao balcão para revisar e pagar.`);
+      setSuccessSubtitle(
+        `Pedido ${orderNumber ?? `#${orderId}`} enviado. Vá ao balcão para revisar e pagar.`
+      );
       setSuccessOpen(true);
 
-      toast.success("Pedido enviado!", {
-        description: `Total: ${formatBRLFromCents(totalCents)} • Finalize no atendimento.`,
-      });
+      if (saibwebQueued || !saibwebError) {
+        toast.success("Pedido enviado!", {
+          description: `Total: ${formatBRLFromCents(totalCents)} • Finalize no atendimento.`,
+        });
+      } else {
+        toast.warning("Pedido salvo com pendência de integração", {
+          description: saibwebError,
+        });
+      }
     } catch (err: any) {
       console.error("Erro ao finalizar pedido:", err);
       toast.error("Erro ao finalizar pedido", {

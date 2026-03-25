@@ -205,7 +205,8 @@ const FavoritesPage: React.FC = () => {
     };
   }, []);
 
-  const ctx = useMemo(() => getPricingContext(), [pricingTick]);
+  void pricingTick;
+  const ctx = getPricingContext();
 
   // ✅ login guard
   useEffect(() => {

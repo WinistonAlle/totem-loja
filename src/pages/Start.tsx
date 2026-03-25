@@ -1,13 +1,13 @@
 // src/pages/Start.tsx
-import React from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import { Bg } from "@/components/ui/app-surface";
 
 import logoGostinho from "@/images/logoc.png";
-import paoImg from "@/images/pao.png";
-import paoDeQueijoImg from "@/images/paodequeijo.png";
-import biscoitoImg from "@/images/biscoito.png";
+import paoImg from "@/images/optimized/pao-hero.png";
+import paoDeQueijoImg from "@/images/optimized/paodequeijo-hero.png";
+import biscoitoImg from "@/images/optimized/biscoito-hero.png";
 
 /* ---------------- Anim ---------------- */
 const pulse = keyframes`
@@ -223,6 +223,26 @@ const ImgRight = styled.img`
 /* ---------------- Component ---------------- */
 export default function Start() {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const warmNextRoutes = () => {
+      void import("./ContextoCompra");
+      void import("./Index");
+    };
+
+    const idleId =
+      "requestIdleCallback" in window
+        ? window.requestIdleCallback(warmNextRoutes, { timeout: 1200 })
+        : window.setTimeout(warmNextRoutes, 500);
+
+    return () => {
+      if ("cancelIdleCallback" in window && typeof idleId === "number") {
+        window.cancelIdleCallback(idleId);
+      } else {
+        window.clearTimeout(idleId as number);
+      }
+    };
+  }, []);
 
   function go() {
     try {

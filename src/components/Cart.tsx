@@ -12,34 +12,33 @@ function getLinePrice(item: any) {
 }
 
 const Cart: React.FC = () => {
-  const { cartItems, addToCart, decreaseQuantity, removeFromCart } = useCart() as any;
-
-  const [open, setOpen] = useState(false);
+  const { cartItems, addToCart, decreaseQuantity, removeFromCart, isCartOpen, openCart, closeCart } =
+    useCart() as any;
   const [enter, setEnter] = useState(false);
 
   useEffect(() => {
-    const onOpen = () => setOpen(true);
+    const onOpen = () => openCart();
     window.addEventListener("gm:open-cart", onOpen as any);
     return () => window.removeEventListener("gm:open-cart", onOpen as any);
-  }, []);
+  }, [openCart]);
 
   useEffect(() => {
-    if (!open) {
+    if (!isCartOpen) {
       setEnter(false);
       return;
     }
     const raf = requestAnimationFrame(() => setEnter(true));
     return () => cancelAnimationFrame(raf);
-  }, [open]);
+  }, [isCartOpen]);
 
   const total = useMemo(
     () => (cartItems ?? []).reduce((acc: number, it: any) => acc + getLinePrice(it), 0),
     [cartItems]
   );
 
-  const close = () => setOpen(false);
+  const close = () => closeCart();
 
-  if (!open) return null;
+  if (!isCartOpen) return null;
 
   return (
     <>

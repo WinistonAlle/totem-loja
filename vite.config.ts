@@ -21,9 +21,10 @@ export default defineConfig(({ mode }) => ({
       // ✅ injeta o registro automaticamente (sem precisar mexer no main.tsx)
       injectRegister: "auto",
       registerType: "autoUpdate",
+      cleanupOutdatedCaches: true,
 
-      // ✅ se quiser que funcione também no npm run dev
-      devOptions: { enabled: true },
+      // Evita SW ativo em desenvolvimento, que costuma deixar caches/states quebrados.
+      devOptions: { enabled: false },
 
       includeAssets: ["apple-touch-icon.png"],
       manifest: {
@@ -48,18 +49,10 @@ export default defineConfig(({ mode }) => ({
       },
 
       workbox: {
+        clientsClaim: true,
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: "/index.html",
-        runtimeCaching: [
-          {
-            urlPattern: ({ url }) =>
-              url.hostname.includes("supabase") ||
-              url.pathname.startsWith("/rest/") ||
-              url.pathname.startsWith("/auth/") ||
-              url.pathname.startsWith("/storage/"),
-            handler: "NetworkOnly",
-          },
-        ],
+        skipWaiting: true,
       },
     }),
 
@@ -69,6 +62,46 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+
+          if (id.includes("react") || id.includes("scheduler")) {
+            return "react-vendor";
+          }
+
+          if (id.includes("@supabase")) {
+            return "supabase-vendor";
+          }
+
+          if (
+            id.includes("recharts") ||
+            id.includes("d3-") ||
+            id.includes("victory-vendor")
+          ) {
+            return "charts-vendor";
+          }
+
+          if (id.includes("jspdf") || id.includes("html2canvas")) {
+            return "export-vendor";
+          }
+
+          if (id.includes("styled-components")) {
+            return "styled-vendor";
+          }
+
+          if (id.includes("lucide-react")) {
+            return "icons-vendor";
+          }
+
+          return "vendor";
+        },
+      },
     },
   },
 }));

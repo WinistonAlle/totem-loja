@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 
@@ -14,26 +14,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
-  FileSpreadsheet,
   FileText,
+  FileSpreadsheet,
 } from "lucide-react";
-
-import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  Legend,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from "recharts";
-
-import jsPDF from "jspdf";
-import "jspdf-autotable";
 
 import {
   Dialog,
@@ -113,9 +96,6 @@ const shortenLabel = (name: string, max = 16) => {
   return name.length > max ? name.slice(0, max) + "…" : name;
 };
 
-const EMPLOYEE_COLORS = ["#ef4444", "#f97316", "#22c55e", "#3b82f6", "#a855f7"];
-const PRODUCT_COLORS = ["#0ea5e9", "#22c55e", "#facc15", "#fb923c", "#f97373"];
-
 /* --------- COMPARAÇÃO DE MESES --------- */
 type MonthOption = {
   label: string;
@@ -163,6 +143,7 @@ const buildSummaryFromOrders = (orders: any[]): Summary => {
 };
 
 const initialMonthOptions = buildLastMonthsOptions();
+const ReportsCharts = lazy(() => import("@/components/reports/ReportsCharts"));
 /* -------------------------------------- */
 
 const ReportsPage: React.FC = () => {
@@ -371,7 +352,7 @@ const ReportsPage: React.FC = () => {
           setDailySummary(null);
         } else {
           const list = (todayOrders as any[]) ?? [];
-          let totalOrdersToday = list.length;
+          const totalOrdersToday = list.length;
           let totalRevenueToday = 0;
           let totalItemsToday = 0;
 
@@ -522,9 +503,14 @@ const ReportsPage: React.FC = () => {
   };
 
   // exportar PDF
-  const handleExportPDF = () => {
+  const handleExportPDF = async () => {
     if (!summary) return;
 
+    const [{ default: jsPDF }, autoTableModule] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+    const autoTable = autoTableModule.default;
     const doc = new jsPDF();
     const dateStr = new Date().toLocaleString("pt-BR");
 
@@ -558,7 +544,7 @@ const ReportsPage: React.FC = () => {
     }
 
     if (topCustomers.length > 0) {
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: currentY,
         head: [["#", "Cliente", "Documento", "Pedidos", "Total (R$)"]],
         body: topCustomers.map((c, index) => [
@@ -576,7 +562,7 @@ const ReportsPage: React.FC = () => {
     }
 
     if (topProducts.length > 0) {
-      (doc as any).autoTable({
+      autoTable(doc, {
         startY: currentY,
         head: [["#", "Produto", "Qtd", "Total (R$)"]],
         body: topProducts.map((p, index) => [
@@ -970,72 +956,18 @@ const ReportsPage: React.FC = () => {
 
             {/* Gráficos */}
             {(customerChartData.length > 0 || productChartData.length > 0) && (
-              <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="rounded-2xl bg-white/90 backdrop-blur-sm border border-gray-100 p-4 shadow-sm flex flex-col">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-1">
-                    Distribuição do faturamento por cliente
-                  </h3>
-                  <p className="text-[11px] text-gray-500 mb-4">
-                    Quanto cada cliente representa do total em R$ no período selecionado.
-                  </p>
-
-                  {customerChartData.length === 0 ? (
-                    <p className="text-xs text-gray-500">Ainda não há dados suficientes para o gráfico.</p>
-                  ) : (
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={customerChartData}
-                            dataKey="value"
-                            nameKey="name"
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={55}
-                            outerRadius={90}
-                            paddingAngle={2}
-                          >
-                            {customerChartData.map((_, index) => (
-                              <Cell key={`cell-customer-${index}`} fill={EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length]} />
-                            ))}
-                          </Pie>
-                          <RechartsTooltip formatter={(value: any) => formatCurrency(Number(value || 0))} />
-                          <Legend layout="vertical" align="right" verticalAlign="middle" wrapperStyle={{ fontSize: 11 }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-2xl bg-white/90 backdrop-blur-sm border border-gray-100 p-4 shadow-sm flex flex-col">
-                  <h3 className="text-sm font-semibold text-gray-800 mb-1">
-                    Quantidade por produto (Top pedidos)
-                  </h3>
-                  <p className="text-[11px] text-gray-500 mb-4">
-                    Comparativo de unidades vendidas entre os produtos mais pedidos no período.
-                  </p>
-
-                  {productChartData.length === 0 ? (
-                    <p className="text-xs text-gray-500">Ainda não há dados suficientes para o gráfico.</p>
-                  ) : (
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={productChartData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="name" tick={{ fontSize: 10 }} tickMargin={8} />
-                          <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                          <RechartsTooltip />
-                          <Bar dataKey="quantity" radius={[6, 6, 0, 0]}>
-                            {productChartData.map((_, index) => (
-                              <Cell key={`cell-prod-${index}`} fill={PRODUCT_COLORS[index % PRODUCT_COLORS.length]} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              </section>
+              <Suspense
+                fallback={
+                  <div className="rounded-2xl bg-white/90 border border-gray-100 p-4 text-sm text-gray-500">
+                    Carregando gráficos...
+                  </div>
+                }
+              >
+                <ReportsCharts
+                  customerChartData={customerChartData}
+                  productChartData={productChartData}
+                />
+              </Suspense>
             )}
           </>
         )}
