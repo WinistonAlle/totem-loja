@@ -639,7 +639,7 @@ const Index: React.FC = () => {
   const categories = useMemo(() => {
     const set = new Set<string>();
     products.forEach((p) => p.category && set.add(p.category));
-    const list = Array.from(set);
+    const list = Array.from(set).filter((category) => category !== "Salgados Grandes");
     return list.length ? list : Object.values(CATEGORY_NAME_BY_ID);
   }, [products]);
 
@@ -857,24 +857,12 @@ const Index: React.FC = () => {
           <aside className="hidden lg:block self-start sticky top-[112px] h-[calc(100dvh-128px)]">
             <div className="h-full rounded-[26px] border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 flex flex-col gap-3">
-                {isLoggedIn ? (
+                {isLoggedIn && (
                   <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
                     <div className="text-[22px] font-extrabold leading-tight text-gray-900">
                       <span className="mr-1">Olá,</span>
                       <span className="text-gray-900">{displayName}</span>
                       <span className="text-[#9E0F14]">!</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
-                    <div className="text-[12px] uppercase tracking-[0.14em] text-gray-500 font-black">
-                      Totem
-                    </div>
-                    <div className="mt-2 text-[22px] font-extrabold leading-tight text-gray-900">
-                      Pedido rapido sem cadastro
-                    </div>
-                    <div className="mt-2 text-[15px] text-gray-600 font-semibold">
-                      Preco atual: {getChannelLabel(pricingCtx?.channel)}
                     </div>
                   </div>
                 )}
@@ -1173,24 +1161,12 @@ const Index: React.FC = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {isLoggedIn ? (
+                    {isLoggedIn && (
                       <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
                         <div className="text-[20px] font-extrabold leading-tight text-gray-900">
                           <span className="mr-1">Olá,</span>
                           <span className="text-gray-900">{displayName}</span>
                           <span className="text-[#9E0F14]">!</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
-                        <div className="text-[12px] uppercase tracking-[0.14em] text-gray-500 font-black">
-                          Totem
-                        </div>
-                        <div className="mt-2 text-[20px] font-extrabold leading-tight text-gray-900">
-                          Pedido rapido sem cadastro
-                        </div>
-                        <div className="mt-2 text-[14px] text-gray-600 font-semibold">
-                          Preco atual: {getChannelLabel(pricingCtx?.channel)}
                         </div>
                       </div>
                     )}

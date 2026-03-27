@@ -38,6 +38,8 @@ const ProductImageCarousel: React.FC<ProductImageCarouselProps> = ({
         <img
           src="/placeholder.svg"
           alt={productName}
+          loading="lazy"
+          decoding="async"
           className="object-cover w-full h-full"
         />
       </div>
@@ -53,6 +55,8 @@ const ProductImageCarousel: React.FC<ProductImageCarouselProps> = ({
           alt={productName}
           onError={(e) => handleImageError(e, 0)}
           onLoad={() => handleImageLoad(0)}
+          loading="lazy"
+          decoding="async"
           className="object-cover w-full h-full"
         />
       </div>
@@ -67,6 +71,8 @@ const ProductImageCarousel: React.FC<ProductImageCarouselProps> = ({
         <img
           src="/placeholder.svg"
           alt={productName}
+          loading="lazy"
+          decoding="async"
           className="object-cover w-full h-full"
         />
       </div>
@@ -85,6 +91,8 @@ const ProductImageCarousel: React.FC<ProductImageCarouselProps> = ({
                 alt={`${productName} - ${index + 1}`}
                 onError={(e) => handleImageError(e, index)}
                 onLoad={() => handleImageLoad(index)}
+                loading="lazy"
+                decoding="async"
                 className="object-cover w-full h-full"
               />
             </div>

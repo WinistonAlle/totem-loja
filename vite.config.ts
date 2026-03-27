@@ -53,6 +53,15 @@ export default defineConfig(({ mode }) => ({
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: "/index.html",
         skipWaiting: true,
+        globIgnores: [
+          "**/assets/Admin-*.js",
+          "**/assets/AdminOrders-*.js",
+          "**/assets/ReportsDashboard-*.js",
+          "**/assets/ReportsCharts-*.js",
+          "**/assets/charts-vendor-*.js",
+          "**/assets/pdf-vendor-*.js",
+          "**/assets/pdf-table-vendor-*.js",
+        ],
       },
     }),
 
@@ -75,8 +84,24 @@ export default defineConfig(({ mode }) => ({
             return "react-vendor";
           }
 
+          if (id.includes("react-router-dom") || id.includes("@remix-run")) {
+            return "router-vendor";
+          }
+
+          if (id.includes("@tanstack/react-query")) {
+            return "query-vendor";
+          }
+
           if (id.includes("@supabase")) {
             return "supabase-vendor";
+          }
+
+          if (id.includes("@radix-ui")) {
+            return "radix-vendor";
+          }
+
+          if (id.includes("framer-motion")) {
+            return "motion-vendor";
           }
 
           if (
@@ -87,8 +112,12 @@ export default defineConfig(({ mode }) => ({
             return "charts-vendor";
           }
 
+          if (id.includes("jspdf-autotable")) {
+            return "pdf-table-vendor";
+          }
+
           if (id.includes("jspdf") || id.includes("html2canvas")) {
-            return "export-vendor";
+            return "pdf-vendor";
           }
 
           if (id.includes("styled-components")) {
@@ -97,6 +126,10 @@ export default defineConfig(({ mode }) => ({
 
           if (id.includes("lucide-react")) {
             return "icons-vendor";
+          }
+
+          if (id.includes("embla-carousel") || id.includes("react-hook-form") || id.includes("zod")) {
+            return "ui-vendor";
           }
 
           return "vendor";

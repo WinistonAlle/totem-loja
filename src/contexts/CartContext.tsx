@@ -1,5 +1,5 @@
 // src/contexts/CartContext.tsx
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Product, CartItem } from "../types/products";
 import { FREE_SHIPPING_THRESHOLD } from "../data/shipping";
 import { MIN_PACKAGES, MIN_WEIGHT_KG } from "@/data/products";
@@ -279,7 +279,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /* ===================== ✅ REPRECIFICAÇÃO ===================== */
 
-  const repriceCartFromPricingContext = () => {
+  const repriceCartFromPricingContext = useCallback(() => {
     const ctx = getPricingContext();
 
     setCartItems((prev) =>
@@ -290,13 +290,20 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { ...item, product: nextProduct };
       })
     );
-  };
+  }, []);
 
   useEffect(() => {
     const onPricing = () => repriceCartFromPricingContext();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "pricing_context") onPricing();
+    };
     window.addEventListener("pricing_context_changed" as any, onPricing);
-    return () => window.removeEventListener("pricing_context_changed" as any, onPricing);
-  }, []);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener("pricing_context_changed" as any, onPricing);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [repriceCartFromPricingContext]);
 
   /* ===================== totais ===================== */
 
@@ -339,7 +346,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /* ===================== ações ===================== */
 
-  const addToCart = (product: Product, quantity: number = 1) => {
+  const addToCart = useCallback((product: Product, quantity: number = 1) => {
     const p0 = normalizeProduct(product);
 
     const ctx = getPricingContext();
@@ -361,9 +368,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     setAnimateCartIcon((prev) => prev + 1);
-  };
+  }, []);
 
-  const addMultipleToCart = (products: { product: Product; quantity: number }[]) => {
+  const addMultipleToCart = useCallback((products: { product: Product; quantity: number }[]) => {
     const ctx = getPricingContext();
 
     setCartItems((prevItems) => {
@@ -389,9 +396,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     setAnimateCartIcon((prev) => prev + 1);
     setIsCartOpen(true);
-  };
+  }, []);
 
-  const decreaseQuantity = (productId: string) => {
+  const decreaseQuantity = useCallback((productId: string) => {
     setCartItems((prevItems) => {
       return prevItems
         .map((item) => {
@@ -404,13 +411,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })
         .filter(Boolean) as CartItem[];
     });
-  };
+  }, []);
 
-  const removeFromCart = (productId: string) => {
+  const removeFromCart = useCallback((productId: string) => {
     setCartItems((prevItems) => prevItems.filter((item) => item.product.id !== productId));
-  };
+  }, []);
 
-  const updateQuantity = (productId: string, quantity: number) => {
+  const updateQuantity = useCallback((productId: string, quantity: number) => {
     const q = Math.floor(toNumber(quantity, 0));
     if (q <= 0) {
       removeFromCart(productId);
@@ -420,9 +427,9 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCartItems((prevItems) =>
       prevItems.map((item) => (item.product.id === productId ? { ...item, quantity: q } : item))
     );
-  };
+  }, [removeFromCart]);
 
-  const clearCart = () => {
+  const clearCart = useCallback(() => {
     setCartItems([]);
     setIsCartOpen(false);
 
@@ -431,13 +438,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         localStorage.removeItem(cartStorageKey);
       }
     } catch {}
-  };
+  }, [cartStorageKey]);
 
-  const toggleCart = () => setIsCartOpen((prev) => !prev);
-  const openCart = () => setIsCartOpen(true);
-  const closeCart = () => setIsCartOpen(false);
+  const toggleCart = useCallback(() => setIsCartOpen((prev) => !prev), []);
+  const openCart = useCallback(() => setIsCartOpen(true), []);
+  const closeCart = useCallback(() => setIsCartOpen(false), []);
 
-  const value: CartContextType = {
+  const value = useMemo<CartContextType>(() => ({
     cartItems,
     addToCart,
     decreaseQuantity,
@@ -458,7 +465,28 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     animateCartIcon,
     showFreeShippingAnimation,
     repriceCartFromPricingContext,
-  };
+  }), [
+    addMultipleToCart,
+    addToCart,
+    animateCartIcon,
+    cartItems,
+    cartTotal,
+    clearCart,
+    closeCart,
+    decreaseQuantity,
+    freeShippingRemaining,
+    isCartOpen,
+    itemsCount,
+    meetsMinimumOrder,
+    openCart,
+    packageCount,
+    removeFromCart,
+    repriceCartFromPricingContext,
+    showFreeShippingAnimation,
+    toggleCart,
+    totalWeight,
+    updateQuantity,
+  ]);
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 };

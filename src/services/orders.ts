@@ -261,8 +261,14 @@ async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrde
 }
 
 async function createOrderViaClientFallback(input: CreateOrderInput): Promise<CreateOrderResult> {
+  const customerDocument = (input.customerDocument ?? "").toString().trim();
+  const customerName = (input.customerName ?? "").toString().trim();
   const paymentMethod = input.paymentMethod ?? "attendant";
   const pricingChannel = inferPricingChannel(paymentMethod);
+
+  if (!customerDocument) throw new Error("customerDocument vazio.");
+  if (!customerName) throw new Error("customerName vazio.");
+  if (!input.items?.length) throw new Error("Pedido sem itens.");
 
   const authoritativeProducts = await loadAuthoritativeProducts(
     input.items.map(({ product }) => String(product?.id ?? ""))
