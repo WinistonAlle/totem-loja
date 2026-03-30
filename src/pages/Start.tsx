@@ -1,8 +1,9 @@
 // src/pages/Start.tsx
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styled, { keyframes } from "styled-components";
 import { Bg } from "@/components/ui/app-surface";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 import logoGostinho from "@/images/logoc.png";
 import paoImg from "@/images/optimized/pao-hero.png";
@@ -21,6 +22,50 @@ const sheen = keyframes`
   12% { opacity: .22; }
   55% { opacity: .10; }
   100% { transform: translateX(130%) rotate(8deg); opacity: 0; }
+`;
+
+const floatInLeft = keyframes`
+  0% {
+    transform: translate3d(-22%, 18%, 0) rotate(-8deg) scale(1.06);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+`;
+
+const floatInCenterDesktop = keyframes`
+  0% {
+    transform: translate3d(-50%, 24%, 0) scale(1.1);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 1;
+  }
+`;
+
+const floatInCenterMobile = keyframes`
+  0% {
+    transform: translate3d(-50%, 30%, 0) scale(1.1);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0) scale(1);
+    opacity: 1;
+  }
+`;
+
+const floatInRight = keyframes`
+  0% {
+    transform: translate3d(18%, 16%, 0) rotate(7deg) scale(1.05);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
 `;
 
 /* ---------------- Screen ---------------- */
@@ -91,6 +136,7 @@ const Logo = styled.img`
   width: min(520px, 78vw);
   height: auto;
   filter: drop-shadow(0 18px 30px rgba(0,0,0,0.15));
+  cursor: pointer;
 
   @media (max-width: 640px) {
     width: min(320px, 78vw);
@@ -112,6 +158,20 @@ const CenterBlock = styled.div`
   @media (max-width: 640px) {
     top: 50%;
     width: calc(100% - 32px);
+  }
+`;
+
+const MobileHint = styled.p`
+  display: none;
+
+  @media (max-width: 640px) {
+    display: block;
+    margin: 12px 0 0;
+    color: rgba(94, 24, 24, 0.72);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-align: center;
   }
 `;
 
@@ -184,6 +244,8 @@ const ImgLeft = styled.img`
   left: -32%;
   width: min(1180px, 100vw);
   z-index: 2;
+  opacity: 0;
+  animation: ${floatInLeft} 1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.08s forwards;
 
   @media (max-width: 640px) {
     display: none;
@@ -202,9 +264,25 @@ const ImgCenter = styled.img`
     brightness(1.15)
     saturate(1.05)
     drop-shadow(0 24px 46px rgba(0,0,0,0.18));
+  opacity: 0;
+  animation: ${floatInCenterDesktop} 1.05s cubic-bezier(0.2, 0.8, 0.2, 1) 0.16s forwards;
 
   @media (max-width: 640px) {
-    display: none;
+    display: block;
+    left: 54.5%;
+    right: auto;
+    bottom: -15%;
+    transform: translateX(-50%);
+    width: 154.01394918vw;
+    max-width: none;
+    height: 52.3647427212dvh;
+    object-fit: cover;
+    object-position: center bottom;
+    filter:
+      brightness(1.05)
+      saturate(1.02)
+      drop-shadow(0 18px 28px rgba(0,0,0,0.14));
+    animation: ${floatInCenterMobile} 1.05s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s forwards;
   }
 `;
 
@@ -214,15 +292,189 @@ const ImgRight = styled.img`
   right: -20%;
   width: min(865px, 84vw);
   z-index: 2;
+  opacity: 0;
+  animation: ${floatInRight} 1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.12s forwards;
 
   @media (max-width: 640px) {
     display: none;
   }
 `;
 
+const HiddenForm = styled.form`
+  display: grid;
+  gap: 18px;
+`;
+
+const HiddenHelp = styled.p`
+  margin: 0;
+  color: rgba(97, 34, 34, 0.86);
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: center;
+`;
+
+const HiddenError = styled.p`
+  margin: 0;
+  color: #b42318;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+`;
+
+const HiddenActions = styled.div`
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+`;
+
+const HiddenButton = styled.button<{ $variant?: "ghost" | "primary" }>`
+  height: 54px;
+  border-radius: 18px;
+  border: ${({ $variant }) => ($variant === "ghost" ? "1px solid rgba(255,255,255,0.42)" : "0")};
+  background: ${({ $variant }) =>
+    $variant === "ghost"
+      ? "rgba(255,255,255,0.52)"
+      : "linear-gradient(180deg, rgba(194,43,43,0.96) 0%, rgba(126,11,15,0.98) 100%)"};
+  color: ${({ $variant }) => ($variant === "ghost" ? "#5a1e1e" : "#fff")};
+  padding: 0 18px;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: ${({ $variant }) =>
+    $variant === "ghost" ? "inset 0 1px 0 rgba(255,255,255,0.36)" : "0 18px 32px rgba(120,14,18,0.28)"};
+  opacity: ${({ disabled }) => (disabled ? 0.6 : 1)};
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+
+  &:active {
+    transform: scale(0.98);
+  }
+`;
+
+const GlassDialogContent = styled(DialogContent)`
+  width: min(92vw, 520px);
+  border-radius: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(255,248,244,0.58) 100%);
+  box-shadow:
+    0 30px 80px rgba(32, 12, 12, 0.22),
+    inset 0 1px 0 rgba(255,255,255,0.54);
+  backdrop-filter: blur(26px) saturate(1.25);
+  -webkit-backdrop-filter: blur(26px) saturate(1.25);
+  padding: 24px;
+  overflow: hidden;
+
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at top left, rgba(255,255,255,0.56), transparent 36%),
+      radial-gradient(circle at bottom right, rgba(201,39,39,0.12), transparent 34%);
+  }
+
+  @media (max-width: 640px) {
+    width: calc(100vw - 24px);
+    border-radius: 28px;
+    padding: 20px;
+  }
+`;
+
+const GlassHeader = styled(DialogHeader)`
+  position: relative;
+  z-index: 1;
+  gap: 8px;
+  text-align: center;
+`;
+
+const GlassTitle = styled(DialogTitle)`
+  font-size: clamp(28px, 3vw, 34px);
+  font-weight: 800;
+  color: #4e1616;
+  letter-spacing: -0.03em;
+  text-align: center;
+`;
+
+const PinDots = styled.div`
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 4px;
+`;
+
+const PinDot = styled.span<{ $filled: boolean }>`
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: ${({ $filled }) => ($filled ? "#8f1014" : "rgba(110,36,36,0.12)")};
+  box-shadow: ${({ $filled }) =>
+    $filled
+      ? "0 6px 16px rgba(143,16,20,0.32), inset 0 1px 0 rgba(255,255,255,0.2)"
+      : "inset 0 1px 0 rgba(255,255,255,0.42)"};
+  transition: all 160ms ease;
+`;
+
+const KeypadShell = styled.div`
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 14px;
+`;
+
+const KeypadGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+`;
+
+const KeyButton = styled.button<{ $accent?: boolean }>`
+  height: 76px;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,0.42);
+  background: ${({ $accent }) =>
+    $accent
+      ? "linear-gradient(180deg, rgba(163,18,24,0.96) 0%, rgba(126,11,15,0.98) 100%)"
+      : "linear-gradient(180deg, rgba(255,255,255,0.64) 0%, rgba(255,246,242,0.46) 100%)"};
+  color: ${({ $accent }) => ($accent ? "#fff" : "#571b1b")};
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  cursor: pointer;
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow:
+    ${({ $accent }) =>
+      $accent
+        ? "0 18px 32px rgba(126,11,15,0.28), inset 0 1px 0 rgba(255,255,255,0.18)"
+        : "0 14px 24px rgba(128,72,72,0.12), inset 0 1px 0 rgba(255,255,255,0.5)"};
+  transition: transform 140ms ease, box-shadow 140ms ease, filter 140ms ease;
+
+  &:active {
+    transform: scale(0.97);
+    filter: brightness(0.98);
+  }
+
+  @media (max-width: 640px) {
+    height: 70px;
+    font-size: 28px;
+  }
+`;
+
 /* ---------------- Component ---------------- */
 export default function Start() {
+  const ADMIN_SHORTCUT_PIN = "250402";
+  const PIN_LENGTH = ADMIN_SHORTCUT_PIN.length;
+  const KEYPAD_VALUES = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
   const navigate = useNavigate();
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [adminPin, setAdminPin] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const [adminLoading, setAdminLoading] = useState(false);
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const warmNextRoutes = () => {
@@ -244,6 +496,14 @@ export default function Start() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+      }
+    };
+  }, []);
+
   function go() {
     try {
       localStorage.removeItem("pricing_context");
@@ -254,17 +514,81 @@ export default function Start() {
     navigate("/contexto");
   }
 
+  function handleLogoTap() {
+    if (tapTimerRef.current) {
+      clearTimeout(tapTimerRef.current);
+    }
+
+    tapCountRef.current += 1;
+    tapTimerRef.current = window.setTimeout(() => {
+      tapCountRef.current = 0;
+      tapTimerRef.current = null;
+    }, 2200);
+
+    if (tapCountRef.current >= 5) {
+      tapCountRef.current = 0;
+      setAdminError("");
+      setAdminPin("");
+      setAdminOpen(true);
+    }
+  }
+
+  async function handleAdminShortcutSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setAdminError("");
+
+    if (adminPin.trim() !== ADMIN_SHORTCUT_PIN) {
+      setAdminError("PIN inválido.");
+      return;
+    }
+
+    setAdminLoading(true);
+    try {
+      localStorage.setItem(
+        "customer_session",
+        JSON.stringify({
+          id: "admin-shortcut",
+          name: "Administrador",
+          document: "admin-shortcut",
+          role: "admin",
+        })
+      );
+      window.dispatchEvent(new Event("customer_session_changed"));
+      setAdminOpen(false);
+      navigate("/catalogo", { replace: true });
+    } catch (error: any) {
+      setAdminError(error?.message || "Não foi possível validar o acesso.");
+    } finally {
+      setAdminLoading(false);
+    }
+  }
+
+  function pushDigit(value: string) {
+    setAdminError("");
+    setAdminPin((current) => {
+      if (current.length >= PIN_LENGTH) return current;
+      return `${current}${value}`;
+    });
+  }
+
+  function clearLastDigit() {
+    setAdminError("");
+    setAdminPin((current) => current.slice(0, -1));
+  }
+
   return (
     <Screen>
       <Content>
         <Top>
-          <Logo src={logoGostinho} alt="Gostinho Mineiro" />
+          <Logo src={logoGostinho} alt="Gostinho Mineiro" onClick={handleLogoTap} />
         </Top>
 
         <CenterBlock>
           <PrimaryBtn type="button" onClick={go}>
-            Começar
+            <span className="hidden sm:inline">Começar</span>
+            <span className="sm:hidden">Adiante seu pedido</span>
           </PrimaryBtn>
+          <MobileHint>clique para começar</MobileHint>
         </CenterBlock>
       </Content>
 
@@ -273,6 +597,89 @@ export default function Start() {
         <ImgCenter src={paoDeQueijoImg} alt="" />
         <ImgRight src={paoImg} alt="" />
       </Bottom>
+
+      <Dialog open={adminOpen} onOpenChange={setAdminOpen}>
+        <GlassDialogContent>
+          <GlassHeader>
+            <GlassTitle>Acesso admin</GlassTitle>
+          </GlassHeader>
+
+          <HiddenForm onSubmit={handleAdminShortcutSubmit}>
+            <HiddenHelp>
+              Informe o PIN de acesso administrativo.
+            </HiddenHelp>
+
+            <PinDots aria-hidden="true">
+              {Array.from({ length: PIN_LENGTH }).map((_, index) => (
+                <PinDot key={index} $filled={index < adminPin.length} />
+              ))}
+            </PinDots>
+
+            <KeypadShell>
+              <KeypadGrid>
+                {KEYPAD_VALUES.map((value) => (
+                  <KeyButton
+                    key={value}
+                    type="button"
+                    onClick={() => pushDigit(value)}
+                    disabled={adminLoading}
+                    aria-label={`Digitar ${value}`}
+                  >
+                    {value}
+                  </KeyButton>
+                ))}
+                <KeyButton
+                  type="button"
+                  onClick={clearLastDigit}
+                  disabled={adminLoading || adminPin.length === 0}
+                  aria-label="Apagar último dígito"
+                >
+                  ←
+                </KeyButton>
+                <KeyButton
+                  type="button"
+                  onClick={() => pushDigit("0")}
+                  disabled={adminLoading}
+                  aria-label="Digitar 0"
+                >
+                  0
+                </KeyButton>
+                <KeyButton
+                  type="submit"
+                  $accent
+                  disabled={adminLoading || adminPin.length !== PIN_LENGTH}
+                  aria-label="Confirmar PIN"
+                >
+                  OK
+                </KeyButton>
+              </KeypadGrid>
+            </KeypadShell>
+
+            {adminError ? <HiddenError>{adminError}</HiddenError> : null}
+
+            <HiddenActions>
+              <HiddenButton
+                type="button"
+                $variant="ghost"
+                onClick={() => setAdminOpen(false)}
+                disabled={adminLoading}
+              >
+                Cancelar
+              </HiddenButton>
+              <HiddenButton
+                type="button"
+                onClick={() => {
+                  setAdminError("");
+                  setAdminPin("");
+                }}
+                disabled={adminLoading || adminPin.length === 0}
+              >
+                Limpar
+              </HiddenButton>
+            </HiddenActions>
+          </HiddenForm>
+        </GlassDialogContent>
+      </Dialog>
     </Screen>
   );
 }

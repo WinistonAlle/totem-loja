@@ -32,5 +32,3 @@ automation_screenshots
 # misc
 *.pem
 *.key
-
-google-service-account.json

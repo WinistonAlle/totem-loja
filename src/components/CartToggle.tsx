@@ -49,7 +49,8 @@ const CartToggle: React.FC = () => {
 
   void pricingTick;
   const currentChannel = getPricingChannel();
-  const reachedWholesale = currentChannel === "atacado";
+  const reachedWholesale =
+    currentChannel === "atacado" || Number(totalWeight ?? 0) >= WHOLESALE_WEIGHT_THRESHOLD_KG;
 
   const [bump, setBump] = useState(false);
   const bumpTimeoutRef = useRef<number | null>(null);

@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import logoGostinho from "@/images/logoc.png";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const CATEGORY_NAME_BY_ID: Record<number, string> = {
   1: "Pão de Queijo",
@@ -39,6 +40,11 @@ const ITEMS_PER_PAGE = 24;
 const PRODUCTS_CACHE_KEY = "gm_catalog_products_v2";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const WHOLESALE_WEIGHT_THRESHOLD_KG = 15;
+const TOTEM_NAME_KEYBOARD_ROWS = [
+  ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+  ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+  ["Z", "X", "C", "V", "B", "N", "M"],
+];
 
 const ROUTES = {
   reports: "/relatorios",
@@ -144,6 +150,7 @@ function buildPricingContext(channel: ChannelType) {
     channel,
     price_table: `${channel.toUpperCase()}_${customer_type.toUpperCase()}`,
     created_at: new Date().toISOString(),
+    customer_name: getPricingContextCustomerName(),
   };
 }
 
@@ -162,6 +169,33 @@ function safeGetPricingContext(): { customer_type: CustomerType; channel: Channe
   } catch {
     return null;
   }
+}
+
+function getPricingContextCustomerName(): string {
+  try {
+    const raw = localStorage.getItem("pricing_context");
+    if (!raw) return "";
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.customer_name === "string" ? parsed.customer_name.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function updatePricingContextCustomerName(name: string) {
+  try {
+    const raw = localStorage.getItem("pricing_context");
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    localStorage.setItem(
+      "pricing_context",
+      JSON.stringify({
+        ...parsed,
+        customer_name: name.trim(),
+      })
+    );
+    window.dispatchEvent(new Event("pricing_context_changed"));
+  } catch {}
 }
 
 function hasPricingContext(): boolean {
@@ -226,6 +260,9 @@ const Index: React.FC = () => {
   // ✅ Mobile bottom-sheet (categorias + menu)
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetTab, setSheetTab] = useState<"categorias" | "menu">("categorias");
+  const [nameModalOpen, setNameModalOpen] = useState(false);
+  const [totemCustomerName, setTotemCustomerName] = useState("");
+  const [nameModalError, setNameModalError] = useState("");
 
   // ✅ trava scroll do body quando o sheet abrir (mobile fica “no lugar”)
   useEffect(() => {
@@ -302,10 +339,48 @@ const Index: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!hasPricingContext()) return;
+    const savedName = getPricingContextCustomerName();
+    setTotemCustomerName(savedName);
+    setNameModalOpen(!savedName);
+  }, [pricingTick]);
+
+  const handleConfirmTotemName = () => {
+    const trimmed = totemCustomerName.trim();
+    if (!trimmed) {
+      setNameModalError("Digite seu nome para continuar.");
+      return;
+    }
+
+    updatePricingContextCustomerName(trimmed);
+    setNameModalError("");
+    setNameModalOpen(false);
+  };
+
+  const handleNameKeyPress = (key: string) => {
+    setNameModalError("");
+    setTotemCustomerName((current) => {
+      if (current.length >= 80) return current;
+      if (key === "SPACE") {
+        if (!current || current.endsWith(" ")) return current;
+        return `${current} `;
+      }
+
+      return `${current}${key}`;
+    });
+  };
+
+  const handleNameBackspace = () => {
+    setNameModalError("");
+    setTotemCustomerName((current) => current.slice(0, -1));
+  };
+
   /* --------------------------------------------------------
      ✅ NAV SAFE
   -------------------------------------------------------- */
   const safeNavigate = (path: string) => {
+    if (nameModalOpen) return;
     try {
       closeCart();
     } catch {}
@@ -355,6 +430,11 @@ const Index: React.FC = () => {
   const SwitchPricing: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
     if (!pricingCtx) return null;
     const isAtacado = pricingCtx.channel === "atacado";
+    const progressToWholesale = Math.min(
+      (Math.max(Number(totalWeight ?? 0), 0) / WHOLESALE_WEIGHT_THRESHOLD_KG) * 100,
+      100
+    );
+    const remainingKg = Math.max(WHOLESALE_WEIGHT_THRESHOLD_KG - Number(totalWeight ?? 0), 0);
 
     return (
       <div
@@ -364,19 +444,21 @@ const Index: React.FC = () => {
         ].join(" ")}
       >
         <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div
-              className={[
-                "font-extrabold text-gray-900 leading-tight",
-                compact ? "text-[18px]" : "text-[22px]",
+            <div className="min-w-0">
+              <div
+                className={[
+                  "font-extrabold text-gray-900 leading-tight",
+                  compact ? "text-[18px]" : "text-[22px]",
               ].join(" ")}
             >
               {isAtacado ? "ATACADO" : "VAREJO"}
+              </div>
+              <div className={[compact ? "text-[13px]" : "text-[15px]", "text-gray-500 font-semibold"].join(" ")}>
+                {isAtacado
+                  ? "Preco de atacado ativo automaticamente"
+                  : `Faltam ${remainingKg.toFixed(1).replace(".", ",")}kg para virar atacado`}
+              </div>
             </div>
-            <div className={[compact ? "text-[13px]" : "text-[15px]", "text-gray-500 font-semibold"].join(" ")}>
-              Toque para alternar
-            </div>
-          </div>
 
           <label className="relative inline-block w-[74px] h-[42px]" aria-label="Alternar canal">
             <input
@@ -404,6 +486,33 @@ const Index: React.FC = () => {
               "
             />
           </label>
+        </div>
+
+        <div className={compact ? "mt-3" : "mt-4"}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12px] font-bold uppercase tracking-[0.08em] text-gray-500">
+              {isAtacado ? "Atacado liberado" : "Progresso para atacado"}
+            </span>
+            <span
+              className={`text-[12px] font-black uppercase tracking-[0.08em] ${
+                isAtacado ? "text-emerald-700" : "text-[#9e0f14]"
+              }`}
+            >
+              {isAtacado ? "15kg atingidos" : `${Math.round(progressToWholesale)}%`}
+            </span>
+          </div>
+
+          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100 ring-1 ring-black/5">
+            <div
+              className="h-full rounded-full transition-[width] duration-500 ease-out"
+              style={{
+                width: `${progressToWholesale}%`,
+                background: isAtacado
+                  ? "linear-gradient(90deg, #187468 0%, #26a97c 58%, #8ee2bf 100%)"
+                  : "linear-gradient(90deg, #9e0f14 0%, #cb4155 52%, #efb788 100%)",
+              }}
+            />
+          </div>
         </div>
       </div>
     );
@@ -742,6 +851,109 @@ const Index: React.FC = () => {
         userSelect: "none",
       }}
     >
+      <Dialog open={nameModalOpen}>
+        <DialogContent className="w-[min(96vw,560px)] rounded-[24px] border-white/50 bg-white/70 p-0 shadow-[0_30px_80px_rgba(32,12,12,0.24)] backdrop-blur-2xl sm:rounded-[30px]">
+          <div className="rounded-[24px] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,245,241,0.58))] p-4 sm:p-8 sm:rounded-[30px]">
+            <DialogHeader className="text-center">
+              <DialogTitle className="text-[24px] font-black tracking-[-0.03em] text-[#5d1717] sm:text-[34px]">
+                Identifique seu pedido
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="mt-4 rounded-[18px] border border-white/40 bg-white/60 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-xl sm:mt-6 sm:rounded-[24px] sm:p-4">
+              <label htmlFor="totem-name-modal" className="mb-2 block text-center text-[16px] font-extrabold text-[#6a1f1f] sm:mb-3 sm:text-[18px]">
+                Digite seu nome:
+              </label>
+              <Input
+                id="totem-name-modal"
+                value={totemCustomerName}
+                onChange={(e) => {
+                  setTotemCustomerName(e.target.value);
+                  if (nameModalError) setNameModalError("");
+                }}
+                maxLength={80}
+                readOnly={typeof window !== "undefined" ? window.innerWidth >= 640 : true}
+                className="h-14 rounded-[16px] border-white/50 bg-white/85 px-2 text-center text-[20px] font-bold text-[#631919] sm:h-20 sm:rounded-[20px] sm:text-[28px]"
+              />
+            </div>
+
+            <div className="mt-3 space-y-2 max-sm:hidden sm:mt-4 sm:space-y-3">
+              {TOTEM_NAME_KEYBOARD_ROWS.map((row, rowIndex) => (
+                <div
+                  key={rowIndex}
+                  className={`grid gap-1.5 sm:gap-2 ${
+                    rowIndex === 1
+                      ? "grid-cols-9 px-2 sm:px-4"
+                      : rowIndex === 2
+                      ? "grid-cols-7 px-5 sm:px-8"
+                      : "grid-cols-10"
+                  }`}
+                >
+                  {row.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => handleNameKeyPress(key)}
+                      className="h-11 rounded-[14px] border border-white/50 bg-white/70 text-[15px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
+                    >
+                      {key}
+                    </button>
+                  ))}
+                </div>
+              ))}
+
+              <div className="grid grid-cols-[1fr_2fr_1fr] gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={handleNameBackspace}
+                  className="h-11 rounded-[14px] border border-white/50 bg-white/70 px-2 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:px-3 sm:text-[17px]"
+                >
+                  Apagar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNameKeyPress("SPACE")}
+                  className="h-11 rounded-[14px] border border-white/50 bg-white/70 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[17px]"
+                >
+                  Espaço
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNameKeyPress("-")}
+                  className="h-11 rounded-[14px] border border-white/50 bg-white/70 text-[16px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
+                >
+                  -
+                </button>
+              </div>
+            </div>
+
+            {nameModalError ? (
+              <p className="mt-4 text-center text-[15px] font-extrabold text-[#b42318]">{nameModalError}</p>
+            ) : null}
+
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setTotemCustomerName("");
+                  setNameModalError("");
+                }}
+                className="h-12 rounded-[16px] border border-white/50 bg-white/60 text-[14px] font-extrabold text-[#6a1f1f] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] backdrop-blur-xl active:scale-[0.98] sm:h-16 sm:rounded-[20px] sm:text-[18px]"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmTotemName}
+                className="h-12 rounded-[16px] bg-[linear-gradient(180deg,#c22b2b_0%,#7f0b0f_100%)] text-[14px] font-extrabold text-white shadow-[0_18px_32px_rgba(126,11,15,0.28)] active:scale-[0.98] sm:h-16 sm:rounded-[20px] sm:text-[18px]"
+              >
+                Entrar no catalogo
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* AVISOS (mobile mais proporcional) */}
       <section className="w-full">
         <div className="h-[200px] sm:h-[280px] lg:h-[384px] w-full bg-gray-100 overflow-hidden">

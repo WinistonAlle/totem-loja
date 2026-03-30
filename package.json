@@ -13,8 +13,7 @@
     "smoke:totem:success": "SMOKE_TOTEM_SCENARIO=success node scripts/smoke-totem.mjs",
     "smoke:totem:webhook-fail": "SMOKE_TOTEM_SCENARIO=webhook_fail node scripts/smoke-totem.mjs",
     "automation:webhook": "tsx automation/saibweb-webhook.ts",
-    "automation:runner": "tsx automation/saibweb-runner.ts",
-    "automation:sheet-sync": "node scripts/syncEmployeesFromSheet.mjs"
+    "automation:runner": "tsx automation/saibweb-runner.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -57,7 +56,6 @@
     "embla-carousel-react": "^8.3.0",
     "express": "^5.2.1",
     "framer-motion": "^12.23.26",
-    "googleapis": "^167.0.0",
     "input-otp": "^1.2.4",
     "intro.js": "^8.3.2",
     "intro.js-react": "^1.0.0",

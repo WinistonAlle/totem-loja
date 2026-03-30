@@ -8,6 +8,7 @@ export type PricingContext = {
   channel: ChannelType;
   price_table: string;
   created_at: string;
+  customer_name?: string;
 };
 
 export function getPricingContext(): PricingContext | null {
@@ -28,6 +29,8 @@ export function getPricingContext(): PricingContext | null {
       channel,
       price_table: parsed?.price_table ?? "",
       created_at: parsed?.created_at ?? "",
+      customer_name:
+        typeof parsed?.customer_name === "string" ? parsed.customer_name.trim() : "",
     };
   } catch {
     return null;

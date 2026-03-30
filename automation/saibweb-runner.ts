@@ -28,6 +28,8 @@ const SHOULD_PAUSE = process.env.SAIBWEB_PAUSE === "1" || KEEP_OPEN;
 
 // ✅ (NOVO) se o webhook passar ORDER_ID, o runner tenta processar exatamente ele
 const TARGET_ORDER_ID = process.env.ORDER_ID ? String(process.env.ORDER_ID) : null;
+const SAIBWEB_TOTEM_CUSTOMER_DOCUMENT =
+  process.env.SAIBWEB_TOTEM_CUSTOMER_DOCUMENT?.trim() || "00000000000";
 const SAIBWEB_CUSTOMER_NAME = process.env.SAIBWEB_CUSTOMER_NAME?.trim() || "CONSUMIDOR";
 const SAIBWEB_PRICE_TABLE_VAREJO = process.env.SAIBWEB_PRICE_TABLE_VAREJO?.trim() || "18";
 const SAIBWEB_PRICE_TABLE_ATACADO =
@@ -159,7 +161,7 @@ function getTotemCustomerName(order: Pick<DbOrder, "customer_name">): string {
 }
 
 function getSaibwebCustomerIdentifier(order: DbOrder): string | null {
-  if (isTotemConsumerOrder(order)) return SAIBWEB_CUSTOMER_NAME;
+  if (isTotemConsumerOrder(order)) return SAIBWEB_TOTEM_CUSTOMER_DOCUMENT;
   return order.customer_document;
 }
 

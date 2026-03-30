@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { useNavigate } from "react-router-dom";
 import { createOrder } from "@/services/orders";
+import { getPricingContext } from "@/utils/pricingContext";
 
 import logo from "../images/logoc.png";
 
@@ -126,7 +127,7 @@ const Checkout: React.FC = () => {
   const navigate = useNavigate();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [customerName, setCustomerName] = useState("");
+  const [customerName, setCustomerName] = useState(() => getPricingContext()?.customer_name ?? "");
 
   const safeCartTotal = Number.isFinite(cartTotal) ? cartTotal : 0;
   const totalCents = useMemo(() => Math.round(safeCartTotal * 100), [safeCartTotal]);
@@ -404,7 +405,7 @@ const Checkout: React.FC = () => {
               <div className="px-4 sm:px-5 py-3 sm:py-[15px] border-b bg-white">
                 <p className="text-lg sm:text-xl font-extrabold">Identificação do pedido</p>
                 <p className="mt-1 text-[14px] sm:text-[16px] text-gray-600">
-                  O pedido vai para o cliente fixo CONSUMIDOR. Digite apenas seu nome para a atendente localizar.
+                  O pedido vai para o cliente fixo CONSUMIDOR. O nome informado antes do catálogo será enviado para a atendente localizar e para a observação no SAIBWEB.
                 </p>
               </div>
 
