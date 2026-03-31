@@ -8,6 +8,8 @@ import { Minus, Plus } from "lucide-react";
 import ProductImageCarousel from "./ProductImageCarousel";
 import { toast } from "./ui/sonner";
 import ProductRetailModal from "@/components/ProductRetailModal";
+import { resolveProductPrice as resolvePricingValue } from "@/utils/productPricing";
+import { getPricingContext } from "@/utils/pricingContext";
 
 /* --------------------------------------------------------
    PRICING CONTEXT (CPF/CNPJ + ATACADO/VAREJO)
@@ -15,42 +17,11 @@ import ProductRetailModal from "@/components/ProductRetailModal";
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
 
-function getPricingContext(): { customer_type: CustomerType; channel: ChannelType } | null {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-
-    const customer_type = parsed?.customer_type;
-    const channel = parsed?.channel;
-
-    if (
-      (customer_type !== "cpf" && customer_type !== "cnpj") ||
-      (channel !== "varejo" && channel !== "atacado")
-    ) {
-      return null;
-    }
-
-    return { customer_type, channel };
-  } catch {
-    return null;
-  }
-}
-
 function resolveProductPrice(
   product: any,
   ctx: { customer_type: CustomerType; channel: ChannelType } | null
 ): number {
-  const fallback = Number(product?.price ?? product?.employee_price ?? 0);
-  if (!ctx) return fallback;
-
-  const key = `price_${ctx.customer_type}_${ctx.channel}`; // ex: price_cpf_varejo
-  const value = product?.[key];
-
-  if (value === undefined || value === null) return fallback;
-
-  const n = Number(String(value).replace(",", "."));
-  return Number.isFinite(n) ? n : fallback;
+  return resolvePricingValue(product, ctx);
 }
 
 interface ProductCardProps {

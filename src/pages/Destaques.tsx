@@ -6,6 +6,7 @@ import FeaturedProductsCarousel from "@/components/FeaturedProductsCarousel";
 import ProductCard from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { getChannelBasePrice } from "@/utils/productPricing";
 
 import {
   Star,
@@ -219,8 +220,8 @@ const Destaques: React.FC = () => {
         name: row.name ?? "",
         image_path: row.image_path ?? null,
         images: imagesArr,
-        price: Number(row.price ?? 0),
-        employee_price: Number(row.employee_price ?? row.price ?? 0),
+        price: getChannelBasePrice(row, "varejo"),
+        employee_price: getChannelBasePrice(row, "atacado"),
         unit: row.unit ?? row.unidade ?? null,
         category: categoryName,
       };

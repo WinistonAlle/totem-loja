@@ -2,19 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ShoppingBag } from "lucide-react";
 import { useCart } from "../contexts/CartContext";
-
-const WHOLESALE_WEIGHT_THRESHOLD_KG = 15;
-
-function getPricingChannel(): "varejo" | "atacado" {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return "varejo";
-    const parsed = JSON.parse(raw);
-    return parsed?.channel === "atacado" ? "atacado" : "varejo";
-  } catch {
-    return "varejo";
-  }
-}
+import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 function getLinePrice(item: any) {
   const p = item?.product ?? {};
@@ -48,9 +36,7 @@ const CartToggle: React.FC = () => {
   }, [totalWeight]);
 
   void pricingTick;
-  const currentChannel = getPricingChannel();
-  const reachedWholesale =
-    currentChannel === "atacado" || Number(totalWeight ?? 0) >= WHOLESALE_WEIGHT_THRESHOLD_KG;
+  const reachedWholesale = hasWholesaleAccess(totalWeight);
 
   const [bump, setBump] = useState(false);
   const bumpTimeoutRef = useRef<number | null>(null);

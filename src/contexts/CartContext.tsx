@@ -3,6 +3,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Product, CartItem } from "../types/products";
 import { FREE_SHIPPING_THRESHOLD } from "../data/shipping";
 import { MIN_PACKAGES, MIN_WEIGHT_KG } from "@/data/products";
+import { resolveProductPrice } from "@/utils/productPricing";
+import { getPricingContext } from "@/utils/pricingContext";
 
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
@@ -119,32 +121,8 @@ function getCustomerSignature(): string {
   }
 }
 
-/* ===================== pricing context ===================== */
-
-function getPricingContext(): { customer_type: CustomerType; channel: ChannelType } | null {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const ct = parsed?.customer_type;
-    const ch = parsed?.channel;
-    if ((ct !== "cpf" && ct !== "cnpj") || (ch !== "varejo" && ch !== "atacado")) return null;
-    return { customer_type: ct, channel: ch };
-  } catch {
-    return null;
-  }
-}
-
 function resolvePriceForProduct(product: any, ctx: { customer_type: CustomerType; channel: ChannelType } | null) {
-  const fallback = toNumber(product?.price ?? product?.employee_price ?? 0, 0);
-  if (!ctx) return fallback;
-
-  const key = `price_${ctx.customer_type}_${ctx.channel}`; // ex: price_cpf_varejo
-  const raw = product?.[key];
-  const n = toNumber(raw, NaN);
-
-  if (Number.isFinite(n) && n > 0) return n;
-  return fallback;
+  return resolveProductPrice(product, ctx);
 }
 
 function stampPrice(product: any, price: number) {

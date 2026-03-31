@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 
 import CartToggle from "@/components/CartToggle";
 import Cart from "@/components/Cart";
+import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
 
 import {
   Search,
@@ -137,27 +138,7 @@ function safeGetPricingContextNow(): PricingContext {
 }
 
 function pickPriceByContext(product: Product, ctx: PricingContext): number {
-  const anyP = product as any;
-
-  const cpfVarejo = toNumber(anyP?.price_cpf_varejo, 0);
-  const cpfAtacado = toNumber(anyP?.price_cpf_atacado, 0);
-  const cnpjVarejo = toNumber(anyP?.price_cnpj_varejo, 0);
-  const cnpjAtacado = toNumber(anyP?.price_cnpj_atacado, 0);
-
-  const baseFallback = toNumber(anyP?.price, 0);
-
-  const pt = (ctx.price_table ?? "").toUpperCase();
-  if (pt === "VAREJO_CPF") return cpfVarejo > 0 ? cpfVarejo : baseFallback;
-  if (pt === "ATACADO_CPF") return cpfAtacado > 0 ? cpfAtacado : baseFallback;
-  if (pt === "VAREJO_CNPJ") return cnpjVarejo > 0 ? cnpjVarejo : baseFallback;
-  if (pt === "ATACADO_CNPJ") return cnpjAtacado > 0 ? cnpjAtacado : baseFallback;
-
-  if (ctx.customer_type === "cpf" && ctx.channel === "varejo") return cpfVarejo > 0 ? cpfVarejo : baseFallback;
-  if (ctx.customer_type === "cpf" && ctx.channel === "atacado") return cpfAtacado > 0 ? cpfAtacado : baseFallback;
-  if (ctx.customer_type === "cnpj" && ctx.channel === "varejo") return cnpjVarejo > 0 ? cnpjVarejo : baseFallback;
-  if (ctx.customer_type === "cnpj" && ctx.channel === "atacado") return cnpjAtacado > 0 ? cnpjAtacado : baseFallback;
-
-  return baseFallback;
+  return resolveProductPrice(product, ctx);
 }
 
 /* --------------------------------------------------------
@@ -185,7 +166,8 @@ type Order = {
    MAPEAR PRODUTO DO SUPABASE -> Product
 -------------------------------------------------------- */
 function mapSupabaseProduct(row: any): Product {
-  const basePrice = toNumber(row.price ?? row.employee_price ?? row.customer_price ?? row.retail_price ?? 0, 0);
+  const varejoBasePrice = getChannelBasePrice(row, "varejo");
+  const atacadoBasePrice = getChannelBasePrice(row, "atacado");
 
   const imagesFromRow = Array.isArray(row.images) ? row.images.filter(Boolean) : [];
   const imagePath = row.image_path ?? row.imagePath ?? null;
@@ -198,8 +180,8 @@ function mapSupabaseProduct(row: any): Product {
     id: String(row.id),
     old_id: row.old_id ?? null,
     name: row.name ?? "",
-    price: basePrice,
-    employee_price: basePrice,
+    price: varejoBasePrice,
+    employee_price: atacadoBasePrice,
     images,
     image_path: imagePath,
     category: row.category ?? row.category_name ?? "Outros",

@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { useNavigate } from "react-router-dom";
 import { createOrder } from "@/services/orders";
-import { getPricingContext } from "@/utils/pricingContext";
+import { getPricingChannel, getPricingContext } from "@/utils/pricingContext";
+import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 import logo from "../images/logoc.png";
 
@@ -20,36 +21,9 @@ function clearCustomerSession() {
   window.dispatchEvent(new Event("pricing_context_changed"));
 }
 
-function getPricingChannel(): "varejo" | "atacado" {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return "varejo";
-    const parsed = JSON.parse(raw);
-    return parsed?.channel === "atacado" ? "atacado" : "varejo";
-  } catch {
-    return "varejo";
-  }
-}
-
 function formatBRLFromCents(cents: number) {
   const v = (Number.isFinite(cents) ? cents : 0) / 100;
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-// tenta usar preço de cliente/varejo se existir, e só cai no employee_price como fallback
-function getUnitPrice(product: any): number {
-  const candidates = [
-    product?.customer_price,
-    product?.retail_price,
-    product?.price,
-    product?.unit_price,
-    product?.employee_price,
-  ];
-  for (const c of candidates) {
-    const n = Number(c);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  return 0;
 }
 
 /* --------------------------------------------------------
@@ -123,7 +97,7 @@ function SuccessOverlay({
    PAGE
 -------------------------------------------------------- */
 const Checkout: React.FC = () => {
-  const { cartItems, cartTotal, clearCart } = useCart();
+  const { cartItems, cartTotal, clearCart, totalWeight } = useCart();
   const navigate = useNavigate();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -176,10 +150,19 @@ const Checkout: React.FC = () => {
     try {
       const trimmedCustomerName = customerName.trim();
       const pricingChannel = getPricingChannel();
+      const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
 
       if (!trimmedCustomerName) {
         toast.error("Digite seu nome", {
           description: "Precisamos do seu nome para identificar o pedido no balcão.",
+        });
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (pricingChannel === "atacado" && !wholesaleUnlocked) {
+        toast.error("Atacado indisponível para este pedido", {
+          description: `O atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`,
         });
         setIsSubmitting(false);
         return;

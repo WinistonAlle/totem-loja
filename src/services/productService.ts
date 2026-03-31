@@ -28,8 +28,7 @@ export async function listProducts(opts?: {
       old_id,
       name,
       description,
-      sku,
-      unit,
+      price,
       employee_price,
       active,
       category_id,
@@ -44,10 +43,10 @@ export async function listProducts(opts?: {
 
   if (search.trim()) {
     const term = search.trim();
-    // busca por nome OU sku
-    query = query.or(
-      `name.ilike.%${term}%,sku.ilike.%${term}%`
-    );
+    const numericTerm = Number(term.replace(/\D/g, ""));
+    query = Number.isFinite(numericTerm) && numericTerm > 0
+      ? query.or(`name.ilike.%${term}%,old_id.eq.${numericTerm}`)
+      : query.ilike("name", `%${term}%`);
   }
 
   const { data, error } = await query;
@@ -62,9 +61,9 @@ export async function listProducts(opts?: {
     old_id: row.old_id,
     name: row.name,
     description: row.description,
-    sku: row.sku,
-    unit: row.unit,
-    employee_price: Number(row.employee_price ?? 0),
+    sku: row.old_id != null ? String(row.old_id) : null,
+    unit: null,
+    employee_price: Number(row.employee_price ?? row.price ?? 0),
     active: row.active,
     category_id: row.category_id,
     category_name: row.categories?.name ?? null,

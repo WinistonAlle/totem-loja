@@ -1,6 +1,8 @@
 // src/services/orders.ts
 import { supabase } from "@/lib/supabase";
+import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
 import { recordSystemEvent } from "@/lib/systemEvents";
+import { WHOLESALE_WEIGHT_THRESHOLD_KG, getOrderTotalWeightKg, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 type OrderItemInput = {
   product: any;
@@ -94,9 +96,10 @@ function inferPricingChannel(paymentMethod: string): ChannelType {
 }
 
 function getAuthoritativeUnitPriceCents(product: ProductRow, channel: ChannelType): number {
-  const key: keyof ProductRow = channel === "atacado" ? "price_cnpj_atacado" : "price_cpf_varejo";
-  const fallback = product?.price ?? product?.employee_price ?? 0;
-  const chosen = product?.[key] ?? fallback;
+  const chosen = resolveProductPrice(product, {
+    customer_type: channel === "atacado" ? "cnpj" : "cpf",
+    channel,
+  }) || getChannelBasePrice(product, channel);
   const cents = toCents(chosen);
 
   if (cents <= 0) {
@@ -209,10 +212,14 @@ async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrde
   const customerDocument = (input.customerDocument ?? "").toString().trim();
   const customerName = (input.customerName ?? "").toString().trim();
   const paymentMethod = input.paymentMethod ?? "attendant";
+  const pricingChannel = inferPricingChannel(paymentMethod);
 
   if (!customerDocument) throw new Error("customerDocument vazio.");
   if (!customerName) throw new Error("customerName vazio.");
   if (!input.items?.length) throw new Error("Pedido sem itens.");
+  if (pricingChannel === "atacado" && !hasWholesaleAccess(getOrderTotalWeightKg(input.items))) {
+    throw new Error(`O atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`);
+  }
 
   const payloadItems = input.items.map(({ product, quantity }) => ({
     product_id: String(product?.id ?? ""),
@@ -269,6 +276,9 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
   if (!customerDocument) throw new Error("customerDocument vazio.");
   if (!customerName) throw new Error("customerName vazio.");
   if (!input.items?.length) throw new Error("Pedido sem itens.");
+  if (pricingChannel === "atacado" && !hasWholesaleAccess(getOrderTotalWeightKg(input.items))) {
+    throw new Error(`O atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`);
+  }
 
   const authoritativeProducts = await loadAuthoritativeProducts(
     input.items.map(({ product }) => String(product?.id ?? ""))

@@ -10,6 +10,8 @@ import Cart from "../components/Cart";
 
 import { Input } from "@/components/ui/input";
 import logoGostinho from "@/images/logoc.png";
+import { resolveProductPrice } from "@/utils/productPricing";
+import { getPricingContext } from "@/utils/pricingContext";
 
 import { Search, ChevronLeft, Heart, History, Bell, LogOut } from "lucide-react";
 
@@ -81,32 +83,8 @@ function toBool(value: unknown): boolean {
 /* --------------------------------------------------------
    PRICING CONTEXT (CPF/CNPJ + ATACADO/VAREJO)
 -------------------------------------------------------- */
-type CustomerType = "cpf" | "cnpj";
-type ChannelType = "varejo" | "atacado";
-
-function getPricingContext(): { customer_type: CustomerType; channel: ChannelType } | null {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const ct = parsed?.customer_type;
-    const ch = parsed?.channel;
-    if ((ct !== "cpf" && ct !== "cnpj") || (ch !== "varejo" && ch !== "atacado")) return null;
-    return { customer_type: ct, channel: ch };
-  } catch {
-    return null;
-  }
-}
-
-function resolvePriceFromCtx(row: any, ctx: { customer_type: CustomerType; channel: ChannelType } | null): number {
-  const fallback = toNumber(row?.price ?? row?.employee_price ?? 0, 0);
-  if (!ctx) return fallback;
-
-  const key = `price_${ctx.customer_type}_${ctx.channel}`;
-  const n = toNumber(row?.[key], NaN);
-  if (Number.isFinite(n) && n > 0) return n;
-
-  return fallback;
+function resolvePriceFromCtx(row: any, ctx: ReturnType<typeof getPricingContext>): number {
+  return resolveProductPrice(row, ctx);
 }
 
 function stampFinalPrice(product: any, finalPrice: number) {
@@ -126,7 +104,7 @@ function stampFinalPrice(product: any, finalPrice: number) {
 /* --------------------------------------------------------
    MAPEAR PRODUTO
 -------------------------------------------------------- */
-function mapSupabaseProduct(row: any, ctx: { customer_type: CustomerType; channel: ChannelType } | null): Product {
+function mapSupabaseProduct(row: any, ctx: ReturnType<typeof getPricingContext>): Product {
   const finalPrice = resolvePriceFromCtx(row, ctx);
 
   const imagesFromRow = Array.isArray(row.images) ? row.images.filter(Boolean) : [];

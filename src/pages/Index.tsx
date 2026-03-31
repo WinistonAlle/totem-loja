@@ -9,6 +9,14 @@ import Cart from "../components/Cart";
 import { normalizeText as normalizeTextUtil } from "@/utils/stringUtils";
 import { useCart } from "@/contexts/CartContext";
 import { recordSystemEvent } from "@/lib/systemEvents";
+import { getChannelBasePrice } from "@/utils/productPricing";
+import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
+import {
+  getPricingContext,
+  getPricingContextCustomerName,
+  hasPricingContext,
+  updatePricingContextCustomerName,
+} from "@/utils/pricingContext";
 
 import {
   Search,
@@ -39,7 +47,6 @@ const CATEGORY_NAME_BY_ID: Record<number, string> = {
 const ITEMS_PER_PAGE = 24;
 const PRODUCTS_CACHE_KEY = "gm_catalog_products_v2";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
-const WHOLESALE_WEIGHT_THRESHOLD_KG = 15;
 const TOTEM_NAME_KEYBOARD_ROWS = [
   ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
@@ -156,51 +163,6 @@ function buildPricingContext(channel: ChannelType) {
 
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
-
-function safeGetPricingContext(): { customer_type: CustomerType; channel: ChannelType } | null {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    const ct = parsed?.customer_type;
-    const ch = parsed?.channel;
-    if ((ct !== "cpf" && ct !== "cnpj") || (ch !== "varejo" && ch !== "atacado")) return null;
-    return { customer_type: ct, channel: ch };
-  } catch {
-    return null;
-  }
-}
-
-function getPricingContextCustomerName(): string {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return "";
-    const parsed = JSON.parse(raw);
-    return typeof parsed?.customer_name === "string" ? parsed.customer_name.trim() : "";
-  } catch {
-    return "";
-  }
-}
-
-function updatePricingContextCustomerName(name: string) {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    localStorage.setItem(
-      "pricing_context",
-      JSON.stringify({
-        ...parsed,
-        customer_name: name.trim(),
-      })
-    );
-    window.dispatchEvent(new Event("pricing_context_changed"));
-  } catch {}
-}
-
-function hasPricingContext(): boolean {
-  return !!safeGetPricingContext();
-}
 
 function clearAllCartKeysFromStorage() {
   try {
@@ -394,7 +356,7 @@ const Index: React.FC = () => {
      SWITCH ATACADO/VAREJO
   -------------------------------------------------------- */
   void pricingTick;
-  const pricingCtx = safeGetPricingContext();
+  const pricingCtx = getPricingContext();
 
   const applyPricingChannel = useCallback((nextChannel: ChannelType) => {
     const next = buildPricingContext(nextChannel);
@@ -408,7 +370,7 @@ const Index: React.FC = () => {
   }, [repriceCartFromPricingContext]);
 
   const handleToggleChannel = () => {
-    const ctx = safeGetPricingContext();
+    const ctx = getPricingContext();
     if (!ctx) {
       navigate(ROUTES.contextoCompra, { replace: true });
       return;
@@ -421,15 +383,18 @@ const Index: React.FC = () => {
   useEffect(() => {
     if (!pricingCtx) return;
 
-    const nextChannel: ChannelType = totalWeight >= WHOLESALE_WEIGHT_THRESHOLD_KG ? "atacado" : "varejo";
-    if (pricingCtx.channel === nextChannel) return;
+    // Mantem a troca manual do toggle.
+    // A automacao aqui so promove para atacado quando o peso minimo e atingido.
+    if (totalWeight < WHOLESALE_WEIGHT_THRESHOLD_KG) return;
+    if (pricingCtx.channel === "atacado") return;
 
-    applyPricingChannel(nextChannel);
+    applyPricingChannel("atacado");
   }, [applyPricingChannel, pricingCtx, totalWeight]);
 
   const SwitchPricing: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
     if (!pricingCtx) return null;
     const isAtacado = pricingCtx.channel === "atacado";
+    const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
     const progressToWholesale = Math.min(
       (Math.max(Number(totalWeight ?? 0), 0) / WHOLESALE_WEIGHT_THRESHOLD_KG) * 100,
       100
@@ -454,9 +419,9 @@ const Index: React.FC = () => {
               {isAtacado ? "ATACADO" : "VAREJO"}
               </div>
               <div className={[compact ? "text-[13px]" : "text-[15px]", "text-gray-500 font-semibold"].join(" ")}>
-                {isAtacado
-                  ? "Preco de atacado ativo automaticamente"
-                  : `Faltam ${remainingKg.toFixed(1).replace(".", ",")}kg para virar atacado`}
+                {isAtacado && wholesaleUnlocked
+                  ? "Tabela de atacado liberada para este pedido"
+                  : `Faltam ${remainingKg.toFixed(1).replace(".", ",")}kg para liberar o atacado`}
               </div>
             </div>
 
@@ -491,14 +456,14 @@ const Index: React.FC = () => {
         <div className={compact ? "mt-3" : "mt-4"}>
           <div className="flex items-center justify-between gap-3">
             <span className="text-[12px] font-bold uppercase tracking-[0.08em] text-gray-500">
-              {isAtacado ? "Atacado liberado" : "Progresso para atacado"}
+              {wholesaleUnlocked ? "Atacado liberado" : "Progresso para atacado"}
             </span>
             <span
               className={`text-[12px] font-black uppercase tracking-[0.08em] ${
-                isAtacado ? "text-emerald-700" : "text-[#9e0f14]"
+                wholesaleUnlocked ? "text-emerald-700" : "text-[#9e0f14]"
               }`}
             >
-              {isAtacado ? "15kg atingidos" : `${Math.round(progressToWholesale)}%`}
+              {wholesaleUnlocked ? "15kg atingidos" : `${Math.round(progressToWholesale)}%`}
             </span>
           </div>
 
@@ -507,7 +472,7 @@ const Index: React.FC = () => {
               className="h-full rounded-full transition-[width] duration-500 ease-out"
               style={{
                 width: `${progressToWholesale}%`,
-                background: isAtacado
+                background: wholesaleUnlocked
                   ? "linear-gradient(90deg, #187468 0%, #26a97c 58%, #8ee2bf 100%)"
                   : "linear-gradient(90deg, #9e0f14 0%, #cb4155 52%, #efb788 100%)",
               }}
@@ -581,7 +546,8 @@ const Index: React.FC = () => {
      PRODUCTS
   -------------------------------------------------------- */
   function mapRowToProduct(row: any): Product {
-    const basePrice = toNumber(row.employee_price ?? row.price ?? 0, 0);
+    const varejoBasePrice = getChannelBasePrice(row, "varejo");
+    const atacadoBasePrice = getChannelBasePrice(row, "atacado");
 
     const price_cpf_atacado = toNumber(row.price_cpf_atacado, 0);
     const price_cpf_varejo = toNumber(row.price_cpf_varejo, 0);
@@ -611,8 +577,8 @@ const Index: React.FC = () => {
       id: String(row.id),
       old_id: row.old_id ?? null,
       name: row.name ?? "",
-      price: basePrice,
-      employee_price: basePrice,
+      price: varejoBasePrice,
+      employee_price: atacadoBasePrice,
       images,
       image_path: imagePath,
       category: categoryName as any,
@@ -1064,6 +1030,16 @@ const Index: React.FC = () => {
           </div>
         )}
 
+        {isLoggedIn && (
+          <div className="mb-4 rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
+            <div className="text-[20px] sm:text-[22px] font-extrabold leading-tight text-gray-900">
+              <span className="mr-1">Bem-vindo,</span>
+              <span className="text-gray-900">{displayName}</span>
+              <span className="text-[#9E0F14]">!</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 lg:gap-6 items-start">
           {/* Sidebar (desktop) */}
           <aside className="hidden lg:block self-start sticky top-[112px] h-[calc(100dvh-128px)]">
@@ -1072,7 +1048,7 @@ const Index: React.FC = () => {
                 {isLoggedIn && (
                   <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
                     <div className="text-[22px] font-extrabold leading-tight text-gray-900">
-                      <span className="mr-1">Olá,</span>
+                      <span className="mr-1">Bem-vindo,</span>
                       <span className="text-gray-900">{displayName}</span>
                       <span className="text-[#9E0F14]">!</span>
                     </div>
@@ -1376,7 +1352,7 @@ const Index: React.FC = () => {
                     {isLoggedIn && (
                       <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
                         <div className="text-[20px] font-extrabold leading-tight text-gray-900">
-                          <span className="mr-1">Olá,</span>
+                          <span className="mr-1">Bem-vindo,</span>
                           <span className="text-gray-900">{displayName}</span>
                           <span className="text-[#9E0F14]">!</span>
                         </div>

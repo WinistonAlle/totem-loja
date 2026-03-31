@@ -1,4 +1,5 @@
 // src/utils/pricingContext.ts
+import { resolveProductPrice } from "./productPricing";
 
 export type CustomerType = "cpf" | "cnpj";
 export type ChannelType = "varejo" | "atacado";
@@ -37,9 +38,32 @@ export function getPricingContext(): PricingContext | null {
   }
 }
 
-function toNumber(v: any, fallback = 0) {
-  const n = Number(String(v ?? "").replace(",", "."));
-  return Number.isFinite(n) ? n : fallback;
+export function getPricingChannel(): ChannelType {
+  return getPricingContext()?.channel ?? "varejo";
+}
+
+export function hasPricingContext(): boolean {
+  return !!getPricingContext();
+}
+
+export function getPricingContextCustomerName(): string {
+  return getPricingContext()?.customer_name?.trim() ?? "";
+}
+
+export function updatePricingContextCustomerName(name: string) {
+  try {
+    const raw = localStorage.getItem("pricing_context");
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    localStorage.setItem(
+      "pricing_context",
+      JSON.stringify({
+        ...parsed,
+        customer_name: name.trim(),
+      })
+    );
+    window.dispatchEvent(new Event("pricing_context_changed"));
+  } catch {}
 }
 
 /**
@@ -47,13 +71,5 @@ function toNumber(v: any, fallback = 0) {
  * Padrão: CPF + VAREJO (se não tiver contexto)
  */
 export function getPriceFromContext(product: any, ctx?: PricingContext | null): number {
-  const c = ctx ?? getPricingContext();
-  const customer = c?.customer_type ?? "cpf";
-  const channel = c?.channel ?? "varejo";
-
-  const key = `price_${customer}_${channel}`; // ex: price_cpf_varejo
-  const v = product?.[key];
-
-  // fallback: se ainda não tiver preenchido essa coluna
-  return toNumber(v, toNumber(product?.price ?? product?.employee_price ?? 0, 0));
+  return resolveProductPrice(product, ctx ?? getPricingContext());
 }
