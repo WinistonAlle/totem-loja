@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/components/ui/sonner";
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 /* --------------------------------------------------------
    ROUTES
@@ -30,17 +31,6 @@ const ROUTES = {
 /* --------------------------------------------------------
    HELPERS
 -------------------------------------------------------- */
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
-  } catch {
-    return {};
-  }
-}
-
 function isMissingRelation(err: any) {
   const msg = String(err?.message ?? "");
   return (
@@ -121,7 +111,7 @@ interface Notice {
 const Avisos: React.FC = () => {
   const navigate = useNavigate();
 
-  const session: any = useMemo(() => safeGetCustomer(), []);
+  const session: any = useMemo(() => getCustomerSessionSnapshot(), []);
   const isAdmin = useMemo(() => String(session?.role ?? "").toLowerCase() === "admin", [session]);
 
   const [notices, setNotices] = useState<Notice[]>([]);

@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { Bg, Card } from "../components/ui/app-surface";
 import logo from "../images/logoc.png";
 import { supabase } from "@/lib/supabase";
+import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
 
 /* =========================================================
    ✅ MOBILE bom (sem mexer no TOTEM)
@@ -754,13 +755,7 @@ function isRepeatedDigits(digits: string) {
 }
 
 function getCustomerSessionFromStorage() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
+  return getCustomerSessionSnapshotOrNull();
 }
 
 function getPricingContextCustomerType(): CustomerType | null {

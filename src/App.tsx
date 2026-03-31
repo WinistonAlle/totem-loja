@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
 import { recordSystemEvent } from "@/lib/systemEvents";
+import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
 
 import { CartProvider } from "@/contexts/CartContext";
 import { useCart } from "@/contexts/CartContext";
@@ -41,34 +42,28 @@ type CustomerSession = {
 
 // ✅ robusto: aceita document em variações (caso seu banco esteja diferente)
 function getCustomerSession(): CustomerSession | null {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return null;
-
-    const parsed: any = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-
-    const id = parsed.id ?? parsed.customer_id ?? parsed.user_id ?? null;
-    const document =
-      parsed.document ??
-      parsed.customer_document ??
-      parsed.cpf ??
-      parsed.cnpj ??
-      parsed.doc ??
-      null;
-
-    // mínimo pra considerar logado
-    if (!id && !document) return null;
-
-    return {
-      id,
-      name: parsed.name ?? parsed.customer_name ?? parsed.full_name ?? null,
-      document,
-      role: (parsed.role ?? parsed.tipo ?? null) as any,
-    };
-  } catch {
+  const parsed: any = getCustomerSessionSnapshotOrNull();
+  if (!parsed || typeof parsed !== "object") {
     return null;
   }
+
+  const id = parsed.id ?? parsed.customer_id ?? parsed.user_id ?? null;
+  const document =
+    parsed.document ??
+    parsed.customer_document ??
+    parsed.cpf ??
+    parsed.cnpj ??
+    parsed.doc ??
+    null;
+
+  if (!id && !document) return null;
+
+  return {
+    id,
+    name: parsed.name ?? parsed.customer_name ?? parsed.full_name ?? null,
+    document,
+    role: (parsed.role ?? parsed.tipo ?? null) as any,
+  };
 }
 
 /* --------------------------------------------------------

@@ -1,5 +1,5 @@
 // src/components/ProductCard.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Product } from "../types/products";
 import { useCart } from "../contexts/CartContext";
 import { Button } from "./ui/button";
@@ -46,23 +46,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
 
   // ✅ Modal Retail (detalhado)
   const [isRetailOpen, setIsRetailOpen] = useState(false);
-
-  // ✅ força re-render quando pricing_context muda
-  const [pricingTick, setPricingTick] = useState(0);
-  useEffect(() => {
-    const onPricing = () => setPricingTick((t) => t + 1);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "pricing_context") setPricingTick((t) => t + 1);
-    };
-    window.addEventListener("pricing_context_changed" as any, onPricing);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      window.removeEventListener("pricing_context_changed" as any, onPricing);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
-
-  void pricingTick;
   const ctx = getPricingContext();
 
   // ✅ preço conforme contexto (cpf/cnpj + atacado/varejo)
@@ -204,14 +187,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
                   {/* tag leve quando tem packageInfo */}
                   {!!product.packageInfo && (
                     <div className="absolute left-2 top-2 sm:left-3 sm:top-3">
-                      <span className="px-2.5 py-1 rounded-full bg-black/75 text-white text-[11px] sm:text-[12px] font-extrabold backdrop-blur">
+                      <span className="px-2.5 py-1 rounded-full bg-black/85 text-white text-[11px] sm:text-[12px] font-extrabold">
                         {product.packageInfo}
                       </span>
                     </div>
                   )}
 
                   {!isAvailable && (
-                    <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] grid place-items-center">
+                    <div className="absolute inset-0 bg-white/82 grid place-items-center">
                       <div className="px-4 py-2 rounded-2xl bg-black text-white text-sm font-extrabold">
                         Sem estoque
                       </div>
@@ -317,26 +300,28 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
         </CardContent>
       </Card>
 
-      <ProductRetailModal
-        open={isRetailOpen}
-        product={retailProduct}
-        onClose={() => setIsRetailOpen(false)}
-        initialQty={quantity > 0 ? quantity : 1}
-        onAddToCart={(p: any, qtyToAdd: number) => {
-          const safeQty = Math.max(1, Number(qtyToAdd || 1));
-          if (!isAvailable) return;
+      {isRetailOpen ? (
+        <ProductRetailModal
+          open={isRetailOpen}
+          product={retailProduct}
+          onClose={() => setIsRetailOpen(false)}
+          initialQty={quantity > 0 ? quantity : 1}
+          onAddToCart={(p: any, qtyToAdd: number) => {
+            const safeQty = Math.max(1, Number(qtyToAdd || 1));
+            if (!isAvailable) return;
 
-          if (quantity > 0) updateQuantity(product.id, safeQty);
-          else addToCart(pricedProduct as any, safeQty);
+            if (quantity > 0) updateQuantity(product.id, safeQty);
+            else addToCart(pricedProduct as any, safeQty);
 
-          setIsRetailOpen(false);
-          toast.success("Adicionado ao carrinho", {
-            description: `${product.name} • ${safeQty}x`,
-          });
-        }}
-      />
+            setIsRetailOpen(false);
+            toast.success("Adicionado ao carrinho", {
+              description: `${product.name} • ${safeQty}x`,
+            });
+          }}
+        />
+      ) : null}
     </>
   );
 };
 
-export default ProductCard;
+export default React.memo(ProductCard);

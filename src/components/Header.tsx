@@ -1,26 +1,13 @@
 import React, { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Home, Bell, ClipboardList, PenSquare, Users } from "lucide-react";
-
-// Mesmo helper do BottomNav
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) {
-      return JSON.parse(raw);
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 const Header: React.FC = () => {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const customer = useMemo(() => safeGetCustomer(), []);
+  const customer = useMemo(() => getCustomerSessionSnapshot(), []);
   const isAdmin =
     (customer as any)?.is_admin ||
     (customer as any)?.role === "admin" ||

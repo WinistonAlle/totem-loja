@@ -4,19 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useCart } from "@/contexts/CartContext";
 import { toast } from "@/components/ui/sonner";
 import { createOrder } from "@/services/orders";
-
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) {
-      return JSON.parse(raw);
-    }
-    return {};
-  } catch {
-    return {};
-  }
-}
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 const CheckoutActions: React.FC = () => {
   const navigate = useNavigate();
@@ -29,7 +17,7 @@ const CheckoutActions: React.FC = () => {
       return;
     }
 
-    const customer: any = safeGetCustomer();
+    const customer: any = getCustomerSessionSnapshot();
 
     const customerDocument = customer?.document || customer?.cpf || customer?.cnpj || "";
 

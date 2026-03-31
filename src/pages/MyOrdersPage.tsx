@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import CartToggle from "@/components/CartToggle";
 import Cart from "@/components/Cart";
 import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import {
   Search,
@@ -41,17 +42,6 @@ const ROUTES = {
 /* --------------------------------------------------------
    HELPER: SESSION (CLIENTE)
 -------------------------------------------------------- */
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
-  } catch {
-    return {};
-  }
-}
-
 /* --------------------------------------------------------
    HELPERS
 -------------------------------------------------------- */
@@ -236,7 +226,7 @@ const MyOrdersPage: React.FC = () => {
 
   const { clearCart, addMultipleToCart } = useCart();
 
-  const customer: any = safeGetCustomer();
+  const customer: any = getCustomerSessionSnapshot();
   const displayName = customer?.name ?? customer?.full_name ?? "Cliente";
 
   const sessionDocRaw = useMemo(

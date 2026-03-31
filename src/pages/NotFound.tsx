@@ -4,20 +4,7 @@ import { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Bg } from "@/components/ui/app-surface";
 import { Button } from "@/components/ui/button";
-
-/* --------------------------------------------------------
-   SESSION HELPERS
--------------------------------------------------------- */
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
-  } catch {
-    return {};
-  }
-}
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 /* --------------------------------------------------------
    STYLES
@@ -87,7 +74,7 @@ export default function NotFound() {
 
   // decide melhor rota “home” dependendo de sessão
   const homeRoute = useMemo(() => {
-    const customer = safeGetCustomer();
+    const customer = getCustomerSessionSnapshot() as any;
 
     // cliente logado -> catálogo
     if (customer?.id || customer?.customer_id || customer?.cpf || customer?.document) return "/catalogo";

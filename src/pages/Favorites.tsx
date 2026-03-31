@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import logoGostinho from "@/images/logoc.png";
 import { resolveProductPrice } from "@/utils/productPricing";
 import { getPricingContext } from "@/utils/pricingContext";
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import { Search, ChevronLeft, Heart, History, Bell, LogOut } from "lucide-react";
 
@@ -29,17 +30,6 @@ const ROUTES = {
 /* --------------------------------------------------------
    SESSION HELPERS (somente customer)
 -------------------------------------------------------- */
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
-  } catch {
-    return {};
-  }
-}
-
 function onlyDigits(v: any) {
   return (v ?? "").toString().replace(/\D/g, "").trim();
 }
@@ -153,7 +143,7 @@ const FavoritesPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const customer: any = safeGetCustomer();
+  const customer: any = getCustomerSessionSnapshot();
 
   const isLogged =
     !!customer?.id || !!customer?.document || !!customer?.cpf || !!customer?.cpf_cnpj;

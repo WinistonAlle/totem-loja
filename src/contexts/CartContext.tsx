@@ -5,6 +5,7 @@ import { FREE_SHIPPING_THRESHOLD } from "../data/shipping";
 import { MIN_PACKAGES, MIN_WEIGHT_KG } from "@/data/products";
 import { resolveProductPrice } from "@/utils/productPricing";
 import { getPricingContext } from "@/utils/pricingContext";
+import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
 
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
@@ -99,26 +100,19 @@ function safeParseJSON(raw: string) {
 }
 
 function getCustomerSignature(): string {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return "anon";
+  const parsed = getCustomerSessionSnapshotOrNull<any>();
+  const doc =
+    parsed?.document ||
+    parsed?.cpf ||
+    parsed?.cnpj ||
+    parsed?.customer?.document ||
+    parsed?.customer?.cpf ||
+    parsed?.customer?.cnpj ||
+    parsed?.user?.document;
 
-    const parsed = safeParseJSON(raw);
-    const doc =
-      parsed?.document ||
-      parsed?.cpf ||
-      parsed?.cnpj ||
-      parsed?.customer?.document ||
-      parsed?.customer?.cpf ||
-      parsed?.customer?.cnpj ||
-      parsed?.user?.document;
+  if (doc && typeof doc === "string" && doc.trim().length > 0) return doc.trim();
 
-    if (doc && typeof doc === "string" && doc.trim().length > 0) return doc.trim();
-
-    return "anon";
-  } catch {
-    return "anon";
-  }
+  return "anon";
 }
 
 function resolvePriceForProduct(product: any, ctx: { customer_type: CustomerType; channel: ChannelType } | null) {

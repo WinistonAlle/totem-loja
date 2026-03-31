@@ -7,6 +7,7 @@ import ProductCard from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getChannelBasePrice } from "@/utils/productPricing";
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import {
   Star,
@@ -41,14 +42,7 @@ const ROUTES = {
   HELPERS
 -------------------------------------------------------- */
 function safeGetSession() {
-  try {
-    const rawCustomer = localStorage.getItem("customer_session");
-    if (rawCustomer) return JSON.parse(rawCustomer);
-
-    return {};
-  } catch {
-    return {};
-  }
+  return getCustomerSessionSnapshot();
 }
 
 function normalizeForSearch(text: string) {

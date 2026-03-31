@@ -17,6 +17,7 @@ import {
   hasPricingContext,
   updatePricingContextCustomerName,
 } from "@/utils/pricingContext";
+import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import {
   Search,
@@ -107,17 +108,6 @@ function isMissingRelation(err: any) {
     msg.toLowerCase().includes("does not exist") ||
     msg.toLowerCase().includes("relation")
   );
-}
-
-function safeGetCustomer() {
-  try {
-    const raw = localStorage.getItem("customer_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
-  } catch {
-    return {};
-  }
 }
 
 function pickDisplayName(session: any): string {
@@ -257,7 +247,7 @@ const Index: React.FC = () => {
   }, []);
 
   void sessionTick;
-  const session = safeGetCustomer() as any;
+  const session = getCustomerSessionSnapshot() as any;
 
   const isLoggedIn = useMemo(() => {
     return Boolean(
@@ -818,7 +808,7 @@ const Index: React.FC = () => {
       }}
     >
       <Dialog open={nameModalOpen}>
-        <DialogContent className="w-[min(96vw,560px)] rounded-[24px] border-white/50 bg-white/70 p-0 shadow-[0_30px_80px_rgba(32,12,12,0.24)] backdrop-blur-2xl sm:rounded-[30px]">
+        <DialogContent className="w-[min(96vw,560px)] rounded-[24px] border-white/50 bg-white/94 p-0 shadow-[0_30px_80px_rgba(32,12,12,0.24)] sm:rounded-[30px]">
           <div className="rounded-[24px] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,245,241,0.58))] p-4 sm:p-8 sm:rounded-[30px]">
             <DialogHeader className="text-center">
               <DialogTitle className="text-[24px] font-black tracking-[-0.03em] text-[#5d1717] sm:text-[34px]">
@@ -826,7 +816,7 @@ const Index: React.FC = () => {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="mt-4 rounded-[18px] border border-white/40 bg-white/60 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] backdrop-blur-xl sm:mt-6 sm:rounded-[24px] sm:p-4">
+            <div className="mt-4 rounded-[18px] border border-white/40 bg-white/88 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] sm:mt-6 sm:rounded-[24px] sm:p-4">
               <label htmlFor="totem-name-modal" className="mb-2 block text-center text-[16px] font-extrabold text-[#6a1f1f] sm:mb-3 sm:text-[18px]">
                 Digite seu nome:
               </label>
@@ -860,7 +850,7 @@ const Index: React.FC = () => {
                       key={key}
                       type="button"
                       onClick={() => handleNameKeyPress(key)}
-                      className="h-11 rounded-[14px] border border-white/50 bg-white/70 text-[15px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
+                      className="h-11 rounded-[14px] border border-white/50 bg-white/92 text-[15px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
                     >
                       {key}
                     </button>
@@ -872,21 +862,21 @@ const Index: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleNameBackspace}
-                  className="h-11 rounded-[14px] border border-white/50 bg-white/70 px-2 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:px-3 sm:text-[17px]"
+                  className="h-11 rounded-[14px] border border-white/50 bg-white/92 px-2 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:px-3 sm:text-[17px]"
                 >
                   Apagar
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNameKeyPress("SPACE")}
-                  className="h-11 rounded-[14px] border border-white/50 bg-white/70 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[17px]"
+                  className="h-11 rounded-[14px] border border-white/50 bg-white/92 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[17px]"
                 >
                   Espaço
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNameKeyPress("-")}
-                  className="h-11 rounded-[14px] border border-white/50 bg-white/70 text-[16px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] backdrop-blur-xl active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
+                  className="h-11 rounded-[14px] border border-white/50 bg-white/92 text-[16px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
                 >
                   -
                 </button>
@@ -904,7 +894,7 @@ const Index: React.FC = () => {
                   setTotemCustomerName("");
                   setNameModalError("");
                 }}
-                className="h-12 rounded-[16px] border border-white/50 bg-white/60 text-[14px] font-extrabold text-[#6a1f1f] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] backdrop-blur-xl active:scale-[0.98] sm:h-16 sm:rounded-[20px] sm:text-[18px]"
+                className="h-12 rounded-[16px] border border-white/50 bg-white/92 text-[14px] font-extrabold text-[#6a1f1f] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] active:scale-[0.98] sm:h-16 sm:rounded-[20px] sm:text-[18px]"
               >
                 Limpar
               </button>
@@ -940,7 +930,7 @@ const Index: React.FC = () => {
       </section>
 
       {/* header sticky: busca + ações mobile (arrumado) */}
-      <div className="sticky top-0 z-40 bg-[#f6f7f9]/95 backdrop-blur-md px-4 sm:px-5 pt-4 sm:pt-5 pb-4 sm:pb-5 border-b border-black/5">
+      <div className="sticky top-0 z-40 bg-[#f6f7f9] px-4 sm:px-5 pt-4 sm:pt-5 pb-4 sm:pb-5 border-b border-black/5">
         <div className="grid grid-cols-1 gap-3">
           <div className="relative">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-6 w-6 text-gray-400" />

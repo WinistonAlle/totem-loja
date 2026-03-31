@@ -113,9 +113,8 @@ const CartToggle: React.FC = () => {
             relative overflow-hidden
             rounded-[18px] sm:rounded-[20px]
             border border-white/70
-            bg-white/58
+            bg-white/94
             px-4 py-2.5 sm:px-5 sm:py-3
-            backdrop-blur-xl
           "
           style={{
             boxShadow: `
@@ -173,7 +172,7 @@ const CartToggle: React.FC = () => {
                 className="absolute inset-y-0 w-[32%] rounded-full"
                 style={{
                   left: 0,
-                  animation: "gmWholesaleGlow 3.4s ease-in-out infinite",
+                  animation: reachedWholesale ? "gmWholesaleGlow 3.4s ease-in-out infinite" : undefined,
                   background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)",
                 }}
               />
@@ -202,7 +201,6 @@ const CartToggle: React.FC = () => {
             0 0 0 1px rgba(0,0,0,0.04),
             0 0 40px rgba(158,15,20,0.15)
           `,
-          backdropFilter: "blur(2px)",
         }}
         aria-label="Abrir sua sacola"
       >
