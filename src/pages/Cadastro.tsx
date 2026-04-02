@@ -85,13 +85,14 @@ const Screen = styled(Bg)`
  * ✅ FIX DEFINITIVO:
  * - usa inset e varia bottom quando teclado abre
  */
-const ContentArea = styled.div<{ $kbVisible: boolean }>`
+const ContentArea = styled.div<{ $kbVisible: boolean; $largeTextMode?: boolean }>`
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
 
-  bottom: ${({ $kbVisible }) => ($kbVisible ? VK_HEIGHT : "0px")};
+  bottom: ${({ $kbVisible, $largeTextMode }) =>
+    $kbVisible ? ($largeTextMode ? "calc(var(--gm-vk-h, 50dvh) + 8dvh)" : VK_HEIGHT) : "0px"};
 
   width: 100%;
   height: auto;
@@ -808,16 +809,16 @@ const AddressCol = styled.div<{ $span: number; $spanMd?: number }>`
 
 /* ================= INPUT COM ÍCONE + VALIDAÇÃO ================= */
 
-const InputWrap = styled.div<{ $status: FieldStatus }>`
+const InputWrap = styled.div<{ $status: FieldStatus; $large?: boolean }>`
   position: relative;
 
   svg {
     position: absolute;
-    left: 16px;
+    left: ${({ $large }) => ($large ? "18px" : "16px")};
     top: 50%;
     transform: translateY(-50%);
-    width: 22px;
-    height: 22px;
+    width: ${({ $large }) => ($large ? "24px" : "22px")};
+    height: ${({ $large }) => ($large ? "24px" : "22px")};
 
     transition: color 120ms ease, opacity 120ms ease;
 
@@ -832,14 +833,14 @@ const InputWrap = styled.div<{ $status: FieldStatus }>`
 
   @media (max-width: 640px) {
     svg {
-      left: 14px;
-      width: 20px;
-      height: 20px;
+      left: ${({ $large }) => ($large ? "16px" : "14px")};
+      width: ${({ $large }) => ($large ? "22px" : "20px")};
+      height: ${({ $large }) => ($large ? "22px" : "20px")};
     }
   }
 `;
 
-const NeumorphicInput = styled.input<{ $status?: FieldStatus }>`
+const NeumorphicInput = styled.input<{ $status?: FieldStatus; $large?: boolean }>`
   width: 100%;
   outline: none;
   appearance: none;
@@ -847,13 +848,13 @@ const NeumorphicInput = styled.input<{ $status?: FieldStatus }>`
   -webkit-tap-highlight-color: transparent;
 
   background: rgba(248, 248, 248, 0.95);
-  font-size: 18px;
+  font-size: ${({ $large }) => ($large ? "22px" : "18px")};
   color: rgba(20, 20, 20, 0.92);
   caret-color: #7d1717;
 
-  padding: 16px 18px 16px 54px;
+  padding: ${({ $large }) => ($large ? "20px 20px 20px 62px" : "16px 18px 16px 54px")};
   border-radius: 18px;
-  min-height: 64px;
+  min-height: ${({ $large }) => ($large ? "78px" : "64px")};
 
   border: 1px solid
     ${({ $status }) =>
@@ -890,9 +891,9 @@ const NeumorphicInput = styled.input<{ $status?: FieldStatus }>`
   }
 
   @media (max-width: 640px) {
-    font-size: 16px;
-    min-height: 58px;
-    padding: 14px 16px 14px 50px;
+    font-size: ${({ $large }) => ($large ? "20px" : "16px")};
+    min-height: ${({ $large }) => ($large ? "72px" : "58px")};
+    padding: ${({ $large }) => ($large ? "18px 18px 18px 58px" : "14px 16px 14px 50px")};
     border-radius: 16px;
   }
 `;
@@ -1057,13 +1058,13 @@ const GhostLink = styled.button`
 
 /* ================= TECLADO VIRTUAL (FORA DO CARD) ================= */
 
-const VirtualKeyboard = styled.div<{ $visible: boolean }>`
+const VirtualKeyboard = styled.div<{ $visible: boolean; $largeTextMode?: boolean }>`
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
 
-  height: ${VK_HEIGHT};
+  height: ${({ $largeTextMode }) => ($largeTextMode ? "calc(var(--gm-vk-h, 50dvh) + 8dvh)" : VK_HEIGHT)};
   z-index: 9990;
 
   transform: translateY(${({ $visible }) => ($visible ? "0%" : "110%")});
@@ -1167,16 +1168,16 @@ const KbMiniBtn = styled.button`
   }
 `;
 
-const KbGrid = styled.div`
+const KbGrid = styled.div<{ $largeTextMode?: boolean }>`
   flex: 1 1 auto;
   min-height: 0;
 
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: ${({ $largeTextMode }) => ($largeTextMode ? "12px" : "10px")};
 
   @media (max-width: 640px) {
-    gap: 8px;
+    gap: ${({ $largeTextMode }) => ($largeTextMode ? "10px" : "8px")};
   }
 `;
 
@@ -1193,31 +1194,31 @@ const KbRow3 = styled.div`
   }
 `;
 
-const KbRow = styled.div`
+const KbRow = styled.div<{ $largeTextMode?: boolean }>`
   flex: 1 1 0;
   min-height: 0;
 
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 10px;
+  gap: ${({ $largeTextMode }) => ($largeTextMode ? "12px" : "10px")};
 
   @media (max-width: 640px) {
-    gap: 8px;
+    gap: ${({ $largeTextMode }) => ($largeTextMode ? "10px" : "8px")};
   }
 `;
 
-const KbKey = styled.button<{ $wide?: boolean; $primary?: boolean }>`
+const KbKey = styled.button<{ $wide?: boolean; $primary?: boolean; $largeTextMode?: boolean }>`
   height: 100%;
-  min-height: 56px;
-  border-radius: 18px;
+  min-height: ${({ $largeTextMode }) => ($largeTextMode ? "68px" : "56px")};
+  border-radius: ${({ $largeTextMode }) => ($largeTextMode ? "22px" : "18px")};
   border: 1px solid rgba(0, 0, 0, 0.1);
 
   background: ${({ $primary }) => ($primary ? "linear-gradient(135deg, #b82626, #7d1717)" : "#fff")};
   color: ${({ $primary }) => ($primary ? "#fff" : "rgba(20,20,20,0.92)")};
 
   font-weight: 950;
-  font-size: 1.28rem;
+  font-size: ${({ $largeTextMode }) => ($largeTextMode ? "1.46rem" : "1.28rem")};
   cursor: pointer;
 
   box-shadow: ${({ $primary }) =>
@@ -1238,17 +1239,17 @@ const KbKey = styled.button<{ $wide?: boolean; $primary?: boolean }>`
   }
 
   svg {
-    width: 22px;
-    height: 22px;
+    width: ${({ $largeTextMode }) => ($largeTextMode ? "24px" : "22px")};
+    height: ${({ $largeTextMode }) => ($largeTextMode ? "24px" : "22px")};
   }
 
   @media (max-width: 640px) {
-    min-height: 48px;
-    border-radius: 16px;
-    font-size: 1.08rem;
+    min-height: ${({ $largeTextMode }) => ($largeTextMode ? "58px" : "48px")};
+    border-radius: ${({ $largeTextMode }) => ($largeTextMode ? "18px" : "16px")};
+    font-size: ${({ $largeTextMode }) => ($largeTextMode ? "1.2rem" : "1.08rem")};
     svg {
-      width: 20px;
-      height: 20px;
+      width: ${({ $largeTextMode }) => ($largeTextMode ? "22px" : "20px")};
+      height: ${({ $largeTextMode }) => ($largeTextMode ? "22px" : "20px")};
     }
   }
 `;
@@ -1904,6 +1905,7 @@ const Cadastro: React.FC = () => {
     const cfg = (fieldConfigs as any)[activeFieldKey] as ActiveField | undefined;
     return cfg ?? null;
   }, [activeFieldKey, fieldConfigs]);
+  const isLargeNameKeyboard = activeFieldKey === "nome" && kbMode !== "numeric";
 
   const getConfigByRef = useCallback(() => {
     const all = Object.values(fieldConfigs) as unknown as ActiveField[];
@@ -2054,7 +2056,7 @@ const Cadastro: React.FC = () => {
         </svg>
       </BackButton>
 
-      <ContentArea $kbVisible={kbVisible}>
+      <ContentArea $kbVisible={kbVisible} $largeTextMode={isLargeNameKeyboard}>
         <Shell $kbVisible={kbVisible}>
           <Layout>
             <Side>
@@ -2198,7 +2200,7 @@ const Cadastro: React.FC = () => {
                               <ReqPill>Obrigatório</ReqPill>
                             </LabelRow>
 
-                            <InputWrap $status={statusOf("nome", nomeOk, !!nome.trim())}>
+                            <InputWrap $status={statusOf("nome", nomeOk, !!nome.trim())} $large>
                               <User />
                               <NeumorphicInput
                                 ref={nomeRef}
@@ -2209,6 +2211,7 @@ const Cadastro: React.FC = () => {
                                 placeholder="Seu nome"
                                 inputMode="none"
                                 $status={statusOf("nome", nomeOk, !!nome.trim())}
+                                $large
                               />
                             </InputWrap>
                             <Helper>{touched.nome && !nomeOk ? "Informe seu nome." : "\u00A0"}</Helper>
@@ -2252,7 +2255,7 @@ const Cadastro: React.FC = () => {
                                 <ReqPill>Obrigatório</ReqPill>
                               </LabelRow>
 
-                              <InputWrap $status={statusOf("nome", nomeOk, !!nome.trim())}>
+                              <InputWrap $status={statusOf("nome", nomeOk, !!nome.trim())} $large>
                                 <Landmark />
                                 <NeumorphicInput
                                   ref={nomeRef}
@@ -2263,6 +2266,7 @@ const Cadastro: React.FC = () => {
                                   placeholder="Razão social / Nome fantasia"
                                   inputMode="none"
                                   $status={statusOf("nome", nomeOk, !!nome.trim())}
+                                  $large
                                 />
                               </InputWrap>
                               <Helper>{touched.nome && !nomeOk ? "Informe o nome." : "\u00A0"}</Helper>
@@ -2530,7 +2534,7 @@ const Cadastro: React.FC = () => {
       </ContentArea>
 
       {/* ================= TECLADO (fixo, fora do card, até o meio) ================= */}
-      <VirtualKeyboard $visible={kbVisible} data-virtual-keyboard="1">
+      <VirtualKeyboard $visible={kbVisible} $largeTextMode={isLargeNameKeyboard} data-virtual-keyboard="1">
         <KbTopBar>
           <KbBadge>
             <KeyboardIcon size={18} />
@@ -2545,7 +2549,7 @@ const Cadastro: React.FC = () => {
           </KbTopActions>
         </KbTopBar>
 
-        <KbGrid>
+        <KbGrid $largeTextMode={isLargeNameKeyboard}>
           {kbMode === "numeric" && (
             <>
               <KbRow3>
@@ -2569,7 +2573,7 @@ const Cadastro: React.FC = () => {
                   </KbKey>
                 ))}
               </KbRow3>
-              <KbRow>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
                 <KbKey type="button" onClick={() => applyKey("0")}>
                   0
                 </KbKey>
@@ -2581,7 +2585,7 @@ const Cadastro: React.FC = () => {
                 </KbKey>
               </KbRow>
 
-              <KbRow>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
                 <KbKey $primary type="button" onClick={() => applyKey("__NEXT__")}>
                   Próximo
                 </KbKey>
@@ -2595,73 +2599,73 @@ const Cadastro: React.FC = () => {
           {kbMode !== "numeric" && (
             <>
               {kbMode === "alphanum" && (
-                <KbRow>
+                <KbRow $largeTextMode={isLargeNameKeyboard}>
                   {alphanumRows.nums.map((k) => (
-                    <KbKey key={k} type="button" onClick={() => applyKey(k)}>
+                    <KbKey key={k} type="button" onClick={() => applyKey(k)} $largeTextMode={isLargeNameKeyboard}>
                       {k}
                     </KbKey>
                   ))}
                 </KbRow>
               )}
 
-              <KbRow>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
                 {alphaRows.row1.map((k) => (
-                  <KbKey key={k} type="button" onClick={() => applyKey(k)}>
+                  <KbKey key={k} type="button" onClick={() => applyKey(k)} $largeTextMode={isLargeNameKeyboard}>
                     {k}
                   </KbKey>
                 ))}
               </KbRow>
 
-              <KbRow>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
                 {alphaRows.row2.map((k) => (
-                  <KbKey key={k} type="button" onClick={() => applyKey(k)}>
+                  <KbKey key={k} type="button" onClick={() => applyKey(k)} $largeTextMode={isLargeNameKeyboard}>
                     {k}
                   </KbKey>
                 ))}
               </KbRow>
 
-              <KbRow>
-                <KbKey type="button" onClick={() => applyKey("__SHIFT__")}>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
+                <KbKey type="button" onClick={() => applyKey("__SHIFT__")} $largeTextMode={isLargeNameKeyboard}>
                   {kbShift ? "ABC" : "abc"}
                 </KbKey>
                 {alphaRows.row3.map((k) => (
-                  <KbKey key={k} type="button" onClick={() => applyKey(k)}>
+                  <KbKey key={k} type="button" onClick={() => applyKey(k)} $largeTextMode={isLargeNameKeyboard}>
                     {k}
                   </KbKey>
                 ))}
               </KbRow>
 
-              <KbRow>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
                 {alphaRows.accents.map((k) => (
-                  <KbKey key={k} type="button" onClick={() => applyKey(k)}>
+                  <KbKey key={k} type="button" onClick={() => applyKey(k)} $largeTextMode={isLargeNameKeyboard}>
                     {k}
                   </KbKey>
                 ))}
                 {kbMode === "alphanum" &&
                   alphanumRows.extra.map((k) => (
-                    <KbKey key={k} type="button" onClick={() => applyKey(k)}>
+                    <KbKey key={k} type="button" onClick={() => applyKey(k)} $largeTextMode={isLargeNameKeyboard}>
                       {k}
                     </KbKey>
                   ))}
               </KbRow>
 
-              <KbRow>
-                <KbKey type="button" onClick={() => applyKey("__BACKSPACE__")}>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
+                <KbKey type="button" onClick={() => applyKey("__BACKSPACE__")} $largeTextMode={isLargeNameKeyboard}>
                   <Delete size={18} /> Apagar
                 </KbKey>
-                <KbKey type="button" onClick={() => applyKey("__SPACE__")}>
+                <KbKey type="button" onClick={() => applyKey("__SPACE__")} $largeTextMode={isLargeNameKeyboard}>
                   <SpaceIcon size={18} /> Espaço
                 </KbKey>
-                <KbKey type="button" onClick={() => applyKey("__CLEAR__")}>
+                <KbKey type="button" onClick={() => applyKey("__CLEAR__")} $largeTextMode={isLargeNameKeyboard}>
                   Limpar
                 </KbKey>
               </KbRow>
 
-              <KbRow>
-                <KbKey $primary type="button" onClick={() => applyKey("__NEXT__")}>
+              <KbRow $largeTextMode={isLargeNameKeyboard}>
+                <KbKey $primary type="button" onClick={() => applyKey("__NEXT__")} $largeTextMode={isLargeNameKeyboard}>
                   Próximo
                 </KbKey>
-                <KbKey type="button" onClick={() => applyKey("__CLOSE__")}>
+                <KbKey type="button" onClick={() => applyKey("__CLOSE__")} $largeTextMode={isLargeNameKeyboard}>
                   Fechar
                 </KbKey>
               </KbRow>

@@ -415,7 +415,13 @@ const Index: React.FC = () => {
               </div>
             </div>
 
-          <label className="relative inline-block w-[74px] h-[42px]" aria-label="Alternar canal">
+          <label
+            className={[
+              "relative inline-block shrink-0",
+              compact ? "h-[42px] w-[76px]" : "h-[46px] w-[84px]",
+            ].join(" ")}
+            aria-label="Alternar canal"
+          >
             <input
               type="checkbox"
               className="peer sr-only"
@@ -423,22 +429,22 @@ const Index: React.FC = () => {
               onChange={handleToggleChannel}
             />
             <span
-              className="
-                absolute inset-0 cursor-pointer
-                bg-white transition-[background-color,border-color] duration-300
-                rounded-[30px] border border-[#ccc]
-                peer-checked:bg-[#5fdd54] peer-checked:border-transparent
-              "
+              className={[
+                "absolute inset-0 cursor-pointer rounded-full border transition-all duration-300",
+                "bg-[#f6f7fb] border-[#d7dce5] shadow-[inset_0_1px_2px_rgba(15,23,42,0.08)]",
+                "peer-checked:border-[#52d24d] peer-checked:bg-[#52d24d]",
+                "peer-focus-visible:ring-4 peer-focus-visible:ring-[#52d24d]/20",
+              ].join(" ")}
             />
             <span
-              className="
-                pointer-events-none
-                absolute left-[2px] top-1/2 -translate-y-1/2
-                h-[2.25em] w-[2.25em] rounded-[18px]
-                bg-white shadow-[0_2px_6px_#999999]
-                transition-transform duration-300
-                peer-checked:translate-x-[1.85em]
-              "
+              className={[
+                "pointer-events-none absolute top-1/2 left-[4px] -translate-y-1/2 rounded-full bg-white",
+                "shadow-[0_8px_18px_rgba(15,23,42,0.18),0_1px_2px_rgba(15,23,42,0.08)] ring-1 ring-black/5",
+                "transition-transform duration-300 ease-out",
+                compact
+                  ? "h-[34px] w-[34px] peer-checked:translate-x-[34px]"
+                  : "h-[38px] w-[38px] peer-checked:translate-x-[38px]",
+              ].join(" ")}
             />
           </label>
         </div>
@@ -808,16 +814,19 @@ const Index: React.FC = () => {
       }}
     >
       <Dialog open={nameModalOpen}>
-        <DialogContent className="w-[min(96vw,560px)] rounded-[24px] border-white/50 bg-white/94 p-0 shadow-[0_30px_80px_rgba(32,12,12,0.24)] sm:rounded-[30px]">
-          <div className="rounded-[24px] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,245,241,0.58))] p-4 sm:p-8 sm:rounded-[30px]">
+        <DialogContent className="w-[min(99.4vw,1280px)] max-w-none rounded-[24px] border-white/50 bg-white/94 p-0 shadow-[0_30px_80px_rgba(32,12,12,0.24)] sm:rounded-[34px]">
+          <div className="rounded-[24px] border border-white/40 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,245,241,0.58))] p-4 sm:rounded-[34px] sm:p-10">
             <DialogHeader className="text-center">
-              <DialogTitle className="text-[24px] font-black tracking-[-0.03em] text-[#5d1717] sm:text-[34px]">
+              <DialogTitle className="mt-0 text-[28px] font-black tracking-[-0.03em] text-[#5d1717] sm:text-[42px]">
                 Identifique seu pedido
               </DialogTitle>
+              <p className="mt-2 text-[14px] font-semibold text-[#6a1f1f]/70 sm:text-[18px]">
+                Digite seu nome para continuar
+              </p>
             </DialogHeader>
 
-            <div className="mt-4 rounded-[18px] border border-white/40 bg-white/88 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] sm:mt-6 sm:rounded-[24px] sm:p-4">
-              <label htmlFor="totem-name-modal" className="mb-2 block text-center text-[16px] font-extrabold text-[#6a1f1f] sm:mb-3 sm:text-[18px]">
+            <div className="mt-4 rounded-[18px] border border-white/40 bg-white/88 p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.5)] sm:mt-7 sm:rounded-[28px] sm:p-5">
+              <label htmlFor="totem-name-modal" className="mb-2 block text-center text-[16px] font-extrabold text-[#6a1f1f] sm:mb-4 sm:text-[22px]">
                 Digite seu nome:
               </label>
               <Input
@@ -829,62 +838,64 @@ const Index: React.FC = () => {
                 }}
                 maxLength={80}
                 readOnly={typeof window !== "undefined" ? window.innerWidth >= 640 : true}
-                className="h-14 rounded-[16px] border-white/50 bg-white/85 px-2 text-center text-[20px] font-bold text-[#631919] sm:h-20 sm:rounded-[20px] sm:text-[28px]"
+                className="h-16 rounded-[18px] border-white/50 bg-white/85 px-3 text-center !text-[29px] font-black !leading-none text-[#631919] sm:h-32 sm:rounded-[28px] sm:px-8 sm:!text-[79px] md:!text-[79px]"
               />
             </div>
 
-            <div className="mt-3 space-y-2 max-sm:hidden sm:mt-4 sm:space-y-3">
-              {TOTEM_NAME_KEYBOARD_ROWS.map((row, rowIndex) => (
-                <div
-                  key={rowIndex}
-                  className={`grid gap-1.5 sm:gap-2 ${
-                    rowIndex === 1
-                      ? "grid-cols-9 px-2 sm:px-4"
-                      : rowIndex === 2
-                      ? "grid-cols-7 px-5 sm:px-8"
-                      : "grid-cols-10"
-                  }`}
-                >
-                  {row.map((key) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => handleNameKeyPress(key)}
-                      className="h-11 rounded-[14px] border border-white/50 bg-white/92 text-[15px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
-                    >
-                      {key}
-                    </button>
-                  ))}
-                </div>
-              ))}
+            <div className="mt-3 space-y-2 max-sm:hidden sm:mt-6 sm:space-y-4">
+              <div className="space-y-2 sm:space-y-4">
+                {TOTEM_NAME_KEYBOARD_ROWS.map((row, rowIndex) => (
+                  <div
+                    key={rowIndex}
+                    className={`grid gap-2 sm:gap-3 ${
+                      rowIndex === 1
+                        ? "grid-cols-9 px-0 sm:px-1"
+                        : rowIndex === 2
+                        ? "grid-cols-7 px-1 sm:px-3"
+                        : "grid-cols-10"
+                    }`}
+                  >
+                    {row.map((key) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => handleNameKeyPress(key)}
+                        className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[24px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[38px]"
+                      >
+                        {key}
+                      </button>
+                    ))}
+                  </div>
+                ))}
 
-              <div className="grid grid-cols-[1fr_2fr_1fr] gap-1.5 sm:gap-2">
-                <button
-                  type="button"
-                  onClick={handleNameBackspace}
-                  className="h-11 rounded-[14px] border border-white/50 bg-white/92 px-2 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:px-3 sm:text-[17px]"
-                >
-                  Apagar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNameKeyPress("SPACE")}
-                  className="h-11 rounded-[14px] border border-white/50 bg-white/92 text-[13px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[17px]"
-                >
-                  Espaço
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleNameKeyPress("-")}
-                  className="h-11 rounded-[14px] border border-white/50 bg-white/92 text-[16px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-14 sm:rounded-[16px] sm:text-[20px]"
-                >
-                  -
-                </button>
+                <div className="grid grid-cols-[1.5fr_3.2fr_1.2fr] gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={handleNameBackspace}
+                    className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 px-3 text-[20px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[32px]"
+                  >
+                    Apagar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNameKeyPress("SPACE")}
+                    className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[20px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[32px]"
+                  >
+                    Espaço
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNameKeyPress("-")}
+                    className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[26px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[38px]"
+                  >
+                    -
+                  </button>
+                </div>
               </div>
             </div>
 
             {nameModalError ? (
-              <p className="mt-4 text-center text-[15px] font-extrabold text-[#b42318]">{nameModalError}</p>
+              <p className="mt-4 text-center text-[15px] font-extrabold text-[#b42318] sm:text-[18px]">{nameModalError}</p>
             ) : null}
 
             <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-3">
@@ -894,16 +905,16 @@ const Index: React.FC = () => {
                   setTotemCustomerName("");
                   setNameModalError("");
                 }}
-                className="h-12 rounded-[16px] border border-white/50 bg-white/92 text-[14px] font-extrabold text-[#6a1f1f] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] active:scale-[0.98] sm:h-16 sm:rounded-[20px] sm:text-[18px]"
+                className="h-12 rounded-[16px] border border-white/50 bg-white/92 text-[14px] font-extrabold text-[#6a1f1f] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] active:scale-[0.98] sm:h-[72px] sm:rounded-[22px] sm:text-[20px]"
               >
                 Limpar
               </button>
               <button
                 type="button"
                 onClick={handleConfirmTotemName}
-                className="h-12 rounded-[16px] bg-[linear-gradient(180deg,#c22b2b_0%,#7f0b0f_100%)] text-[14px] font-extrabold text-white shadow-[0_18px_32px_rgba(126,11,15,0.28)] active:scale-[0.98] sm:h-16 sm:rounded-[20px] sm:text-[18px]"
+                className="h-12 rounded-[16px] bg-[linear-gradient(180deg,#c22b2b_0%,#7f0b0f_100%)] text-[14px] font-extrabold text-white shadow-[0_18px_32px_rgba(126,11,15,0.28)] active:scale-[0.98] sm:h-[72px] sm:rounded-[22px] sm:text-[20px]"
               >
-                Entrar no catalogo
+                Entrar no catálogo
               </button>
             </div>
           </div>
@@ -1013,7 +1024,7 @@ const Index: React.FC = () => {
         </div>
       </div>
 
-      <main className="px-4 sm:px-5 pb-[calc(132px+env(safe-area-inset-bottom))] sm:pb-28">
+      <main className="px-4 sm:px-5 pb-[calc(220px+env(safe-area-inset-bottom))] sm:pb-[220px]">
         {loadError && (
           <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-700 font-semibold">
             Erro: {loadError}
@@ -1181,7 +1192,7 @@ const Index: React.FC = () => {
                 </div>
               </div>
 
-              <div className="p-3 sm:p-4 pb-10">
+              <div className="p-3 sm:p-4 pb-24 sm:pb-28">
                 {loading && !products.length ? (
                   <div className="text-gray-500">Carregando...</div>
                 ) : filtered.length === 0 ? (

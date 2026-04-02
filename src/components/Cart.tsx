@@ -1,6 +1,7 @@
 // src/components/Cart.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { X, Minus, Plus, Trash2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import { Button } from "./ui/button";
 
@@ -12,6 +13,7 @@ function getLinePrice(item: any) {
 }
 
 const Cart: React.FC = () => {
+  const navigate = useNavigate();
   const { cartItems, addToCart, decreaseQuantity, removeFromCart, isCartOpen, openCart, closeCart } =
     useCart() as any;
   const [enter, setEnter] = useState(false);
@@ -265,7 +267,7 @@ const Cart: React.FC = () => {
               className="h-12 sm:h-16 rounded-2xl sm:rounded-3xl px-6 sm:px-9 font-extrabold text-[14px] sm:text-[18px] bg-black text-white hover:bg-gray-900 flex-1"
               onClick={() => {
                 close();
-                window.location.href = "/checkout";
+                navigate("/checkout");
               }}
             >
               Finalizar

@@ -28,6 +28,7 @@ Thumbs.db
 playwright-report
 test-results
 automation_screenshots
+output/
 
 # misc
 *.pem

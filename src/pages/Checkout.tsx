@@ -26,6 +26,11 @@ function formatBRLFromCents(cents: number) {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function getUnitPrice(product: any) {
+  const raw = Number(product?.employee_price ?? product?.price ?? 0);
+  return Number.isFinite(raw) ? raw : 0;
+}
+
 /* --------------------------------------------------------
    SUCCESS OVERLAY (com "obrigado" animado)
 -------------------------------------------------------- */
