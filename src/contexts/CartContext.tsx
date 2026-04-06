@@ -2,10 +2,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Product, CartItem } from "../types/products";
 import { FREE_SHIPPING_THRESHOLD } from "../data/shipping";
+import { APP_EVENT, subscribeAppEvent } from "@/lib/appEvents";
 import { MIN_PACKAGES, MIN_WEIGHT_KG } from "@/data/products";
 import { resolveProductPrice } from "@/utils/productPricing";
 import { getPricingContext } from "@/utils/pricingContext";
 import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
+import { getProductImages, getProductWeight, stampProductPrice, toBool, toNumber } from "@/utils/productData";
 
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
@@ -47,44 +49,16 @@ export const useCart = (): CartContextType => {
   return context;
 };
 
-/* ===================== helpers: números/booleanos ===================== */
-
-function toNumber(value: unknown, fallback = 0): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-
-  if (typeof value === "string") {
-    const normalized = value.replace(",", ".").trim();
-    const n = Number(normalized);
-    return Number.isFinite(n) ? n : fallback;
-  }
-
-  return fallback;
-}
-
-function toBool(value: unknown): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    const v = value.trim().toLowerCase();
-    if (v === "true" || v === "1" || v === "sim" || v === "yes") return true;
-    if (v === "false" || v === "0" || v === "nao" || v === "não" || v === "no") return false;
-  }
-  if (typeof value === "number") return value !== 0;
-  return false;
-}
-
-/* ===================== normalizador do produto ===================== */
-
 function normalizeProduct(raw: any): Product {
-  const images = Array.isArray(raw?.images) ? raw.images.filter(Boolean) : [];
   const image_path = raw?.image_path ?? raw?.imagePath ?? null;
 
   return {
     ...raw,
     price: toNumber(raw?.price, 0),
     employee_price: toNumber(raw?.employee_price ?? raw?.employeePrice, 0),
-    weight: toNumber(raw?.weight ?? raw?.weight_kg ?? raw?.weightKg, 0),
+    weight: getProductWeight(raw ?? {}),
     isPackage: toBool(raw?.isPackage ?? raw?.is_package ?? raw?.is_pkg),
-    images: images.length > 0 ? images : image_path ? [image_path] : [],
+    images: getProductImages(raw ?? {}),
     image_path,
   } as Product;
 }
@@ -120,17 +94,7 @@ function resolvePriceForProduct(product: any, ctx: { customer_type: CustomerType
 }
 
 function stampPrice(product: any, price: number) {
-  const p = { ...(product ?? {}) };
-  p.price = price;
-  p.employee_price = price;
-
-  p.customer_price = price;
-  p.retail_price = price;
-  p.wholesale_price = price;
-  p.atacado_price = price;
-  p.varejo_price = price;
-
-  return p as Product;
+  return stampProductPrice(product ?? {}, price) as Product;
 }
 
 /* ===================== storage helpers ===================== */
@@ -193,11 +157,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (e.key === "customer_session") updateSig();
     };
 
-    window.addEventListener("customer_session_changed" as any, updateSig);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.customerSessionChanged, updateSig);
     window.addEventListener("storage", onStorage);
 
     return () => {
-      window.removeEventListener("customer_session_changed" as any, updateSig);
+      unsubscribe();
       window.removeEventListener("storage", onStorage);
     };
   }, []);
@@ -269,10 +233,10 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const onStorage = (e: StorageEvent) => {
       if (e.key === "pricing_context") onPricing();
     };
-    window.addEventListener("pricing_context_changed" as any, onPricing);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("pricing_context_changed" as any, onPricing);
+      unsubscribe();
       window.removeEventListener("storage", onStorage);
     };
   }, [repriceCartFromPricingContext]);

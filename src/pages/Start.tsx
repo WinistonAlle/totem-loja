@@ -1,6 +1,8 @@
 // src/pages/Start.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
+import { clearCustomerSession, saveCustomerSession } from "@/utils/customerSession";
 import styled, { keyframes } from "styled-components";
 import { Bg } from "@/components/ui/app-surface";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -534,7 +536,7 @@ export default function Start() {
   const [adminError, setAdminError] = useState("");
   const [adminLoading, setAdminLoading] = useState(false);
   const tapCountRef = useRef(0);
-  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     const warmNextRoutes = () => {
@@ -542,16 +544,21 @@ export default function Start() {
       void import("./Index");
     };
 
-    const idleId =
-      "requestIdleCallback" in window
-        ? window.requestIdleCallback(warmNextRoutes, { timeout: 1200 })
-        : window.setTimeout(warmNextRoutes, 500);
+    let idleCallbackId: number | null = null;
+    let timeoutId: number | null = null;
+
+    if (typeof window.requestIdleCallback === "function") {
+      idleCallbackId = window.requestIdleCallback(warmNextRoutes, { timeout: 1200 });
+    } else {
+      timeoutId = window.setTimeout(warmNextRoutes, 500);
+    }
 
     return () => {
-      if ("cancelIdleCallback" in window && typeof idleId === "number") {
-        window.cancelIdleCallback(idleId);
-      } else {
-        window.clearTimeout(idleId as number);
+      if (typeof window.cancelIdleCallback === "function" && idleCallbackId !== null) {
+        window.cancelIdleCallback(idleCallbackId);
+      }
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
       }
     };
   }, []);
@@ -567,9 +574,8 @@ export default function Start() {
   function go() {
     try {
       localStorage.removeItem("pricing_context");
-      localStorage.removeItem("customer_session");
-      window.dispatchEvent(new Event("pricing_context_changed"));
-      window.dispatchEvent(new Event("customer_session_changed"));
+      clearCustomerSession();
+      emitAppEvent(APP_EVENT.pricingContextChanged);
     } catch {}
     navigate("/contexto");
   }
@@ -604,16 +610,12 @@ export default function Start() {
 
     setAdminLoading(true);
     try {
-      localStorage.setItem(
-        "customer_session",
-        JSON.stringify({
-          id: "admin-shortcut",
-          name: "Administrador",
-          document: "admin-shortcut",
-          role: "admin",
-        })
-      );
-      window.dispatchEvent(new Event("customer_session_changed"));
+      saveCustomerSession({
+        id: "admin-shortcut",
+        name: "Administrador",
+        document: "admin-shortcut",
+        role: "admin",
+      });
       setAdminOpen(false);
       navigate("/catalogo", { replace: true });
     } catch (error: any) {

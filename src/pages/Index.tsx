@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { APP_EVENT, emitAppEvent, subscribeAppEvent } from "@/lib/appEvents";
 import type { Product } from "../types/products";
 import ProductCard from "../components/ProductCard";
 import CartToggle from "../components/CartToggle";
@@ -17,7 +18,8 @@ import {
   hasPricingContext,
   updatePricingContextCustomerName,
 } from "@/utils/pricingContext";
-import { getCustomerSessionSnapshot } from "@/utils/customerSession";
+import { clearCustomerSession, getCustomerSessionSnapshot } from "@/utils/customerSession";
+import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
 
 import {
   Search,
@@ -29,6 +31,9 @@ import {
   Filter,
   X,
   LayoutGrid,
+  Keyboard,
+  Delete,
+  Space as SpaceIcon,
 } from "lucide-react";
 import logoGostinho from "@/images/logoc.png";
 import { Input } from "@/components/ui/input";
@@ -154,19 +159,6 @@ function buildPricingContext(channel: ChannelType) {
 type CustomerType = "cpf" | "cnpj";
 type ChannelType = "varejo" | "atacado";
 
-function clearAllCartKeysFromStorage() {
-  try {
-    const keys: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k) keys.push(k);
-    }
-    keys.forEach((k) => {
-      if (k.startsWith("cart_") || k.startsWith("gm_cart_")) localStorage.removeItem(k);
-    });
-  } catch {}
-}
-
 /* --------------------------------------------------------
    TYPES
 -------------------------------------------------------- */
@@ -215,6 +207,7 @@ const Index: React.FC = () => {
   const [nameModalOpen, setNameModalOpen] = useState(false);
   const [totemCustomerName, setTotemCustomerName] = useState("");
   const [nameModalError, setNameModalError] = useState("");
+  const [searchKeyboardOpen, setSearchKeyboardOpen] = useState(false);
 
   // ✅ trava scroll do body quando o sheet abrir (mobile fica “no lugar”)
   useEffect(() => {
@@ -227,6 +220,26 @@ const Index: React.FC = () => {
   }, [sheetOpen]);
 
   useEffect(() => {
+    if (!searchKeyboardOpen) return;
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-search-keyboard='1']")) return;
+      if (target.closest("[data-search-input='1']")) return;
+      setSearchKeyboardOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [searchKeyboardOpen]);
+
+  useEffect(() => {
+    if (!nameModalOpen) return;
+    setSearchKeyboardOpen(false);
+  }, [nameModalOpen]);
+
+  useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "customer_session") setSessionTick((t) => t + 1);
       if (e.key === "pricing_context") setPricingTick((t) => t + 1);
@@ -234,15 +247,15 @@ const Index: React.FC = () => {
     window.addEventListener("storage", onStorage);
 
     const onLocal = () => setSessionTick((t) => t + 1);
-    window.addEventListener("customer_session_changed" as any, onLocal);
+    const unsubscribeSession = subscribeAppEvent(APP_EVENT.customerSessionChanged, onLocal);
 
     const onPricing = () => setPricingTick((t) => t + 1);
-    window.addEventListener("pricing_context_changed" as any, onPricing);
+    const unsubscribePricing = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
 
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("customer_session_changed" as any, onLocal);
-      window.removeEventListener("pricing_context_changed" as any, onPricing);
+      unsubscribeSession();
+      unsubscribePricing();
     };
   }, []);
 
@@ -260,7 +273,11 @@ const Index: React.FC = () => {
     );
   }, [session]);
 
-  const displayName = useMemo(() => pickDisplayName(session), [session]);
+  const typedCustomerName = getPricingContextCustomerName();
+  const displayName = useMemo(() => {
+    return typedCustomerName || pickDisplayName(session);
+  }, [session, typedCustomerName]);
+  const shouldShowDisplayName = Boolean(displayName && (isLoggedIn || typedCustomerName));
   const isAdmin = useMemo(() => String(session?.role ?? "").toLowerCase() === "admin", [session]);
 
   const isActiveRoute = (path: string) => {
@@ -276,10 +293,8 @@ const Index: React.FC = () => {
       clearAllCartKeysFromStorage();
 
       localStorage.removeItem("pricing_context");
-      localStorage.removeItem("customer_session");
-
-      window.dispatchEvent(new Event("pricing_context_changed"));
-      window.dispatchEvent(new Event("customer_session_changed"));
+      clearCustomerSession();
+      emitAppEvent(APP_EVENT.pricingContextChanged);
     } catch {}
     navigate(ROUTES.start, { replace: true });
   };
@@ -328,6 +343,21 @@ const Index: React.FC = () => {
     setTotemCustomerName((current) => current.slice(0, -1));
   };
 
+  const handleSearchKeyPress = (key: string) => {
+    setSearchTerm((current) => {
+      if (current.length >= 80) return current;
+      if (key === "SPACE") {
+        if (!current || current.endsWith(" ")) return current;
+        return `${current} `;
+      }
+      return `${current}${key}`;
+    });
+  };
+
+  const handleSearchBackspace = () => {
+    setSearchTerm((current) => current.slice(0, -1));
+  };
+
   /* --------------------------------------------------------
      ✅ NAV SAFE
   -------------------------------------------------------- */
@@ -353,7 +383,7 @@ const Index: React.FC = () => {
 
     try {
       localStorage.setItem("pricing_context", JSON.stringify(next));
-      window.dispatchEvent(new Event("pricing_context_changed"));
+      emitAppEvent(APP_EVENT.pricingContextChanged);
     } catch {}
 
     repriceCartFromPricingContext();
@@ -831,6 +861,7 @@ const Index: React.FC = () => {
               </label>
               <Input
                 id="totem-name-modal"
+                data-testid="totem-name-input"
                 value={totemCustomerName}
                 onChange={(e) => {
                   setTotemCustomerName(e.target.value);
@@ -859,6 +890,7 @@ const Index: React.FC = () => {
                       <button
                         key={key}
                         type="button"
+                        data-testid={`totem-name-key-${key}`}
                         onClick={() => handleNameKeyPress(key)}
                         className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[24px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[38px]"
                       >
@@ -871,6 +903,7 @@ const Index: React.FC = () => {
                 <div className="grid grid-cols-[1.5fr_3.2fr_1.2fr] gap-2 sm:gap-3">
                   <button
                     type="button"
+                    data-testid="totem-name-backspace"
                     onClick={handleNameBackspace}
                     className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 px-3 text-[20px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[32px]"
                   >
@@ -878,6 +911,7 @@ const Index: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    data-testid="totem-name-space"
                     onClick={() => handleNameKeyPress("SPACE")}
                     className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[20px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[32px]"
                   >
@@ -885,6 +919,7 @@ const Index: React.FC = () => {
                   </button>
                   <button
                     type="button"
+                    data-testid="totem-name-hyphen"
                     onClick={() => handleNameKeyPress("-")}
                     className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[26px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[38px]"
                   >
@@ -901,6 +936,7 @@ const Index: React.FC = () => {
             <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:gap-3">
               <button
                 type="button"
+                data-testid="totem-name-clear"
                 onClick={() => {
                   setTotemCustomerName("");
                   setNameModalError("");
@@ -911,6 +947,7 @@ const Index: React.FC = () => {
               </button>
               <button
                 type="button"
+                data-testid="totem-name-confirm"
                 onClick={handleConfirmTotemName}
                 className="h-12 rounded-[16px] bg-[linear-gradient(180deg,#c22b2b_0%,#7f0b0f_100%)] text-[14px] font-extrabold text-white shadow-[0_18px_32px_rgba(126,11,15,0.28)] active:scale-[0.98] sm:h-[72px] sm:rounded-[22px] sm:text-[20px]"
               >
@@ -946,20 +983,44 @@ const Index: React.FC = () => {
           <div className="relative">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 h-6 w-6 text-gray-400" />
             <Input
+              data-testid="catalog-search-input"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
+              onClick={() => {
+                if (typeof window !== "undefined" && window.innerWidth >= 640) {
+                  setSearchKeyboardOpen(true);
+                }
+              }}
+              onFocus={() => {
+                if (typeof window !== "undefined" && window.innerWidth >= 640) {
+                  setSearchKeyboardOpen(true);
+                }
+              }}
               placeholder="Buscar produto (nome ou código)..."
               className="
-                h-14 sm:h-16 pl-14 pr-5
-                rounded-[22px] sm:rounded-[24px]
-                bg-white border border-gray-200
-                shadow-[0_10px_24px_rgba(0,0,0,0.06)]
-                text-[16px] sm:text-[17px] font-semibold
+                h-15 sm:h-[72px] pl-14 sm:pl-16 pr-14 sm:pr-16
+                rounded-[24px] sm:rounded-[28px]
+                bg-white border border-gray-200/90
+                shadow-[0_14px_30px_rgba(0,0,0,0.07)]
+                text-[16px] sm:text-[18px] font-semibold text-gray-900
                 placeholder:text-gray-400
                 focus-visible:ring-2 focus-visible:ring-black/10
               "
               inputMode="search"
+              readOnly={typeof window !== "undefined" ? window.innerWidth >= 640 : true}
+              data-search-input="1"
             />
+            {searchTerm ? (
+              <button
+                type="button"
+                data-testid="catalog-search-clear"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 h-9 w-9 sm:h-11 sm:w-11 rounded-full border border-gray-200 bg-white text-gray-500 shadow-[0_8px_18px_rgba(0,0,0,0.08)] hover:text-gray-700 active:scale-[0.97]"
+                aria-label="Limpar busca"
+              >
+                <X className="h-4 w-4 sm:h-5 sm:w-5 mx-auto" />
+              </button>
+            ) : null}
           </div>
 
           {/* ✅ Mobile toolbar: bem alinhada e “clean” */}
@@ -1031,10 +1092,10 @@ const Index: React.FC = () => {
           </div>
         )}
 
-        {isLoggedIn && (
+        {shouldShowDisplayName && (
           <div className="mb-4 rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
             <div className="text-[20px] sm:text-[22px] font-extrabold leading-tight text-gray-900">
-              <span className="mr-1">Bem-vindo,</span>
+              <span className="mr-1">OLÁ,</span>
               <span className="text-gray-900">{displayName}</span>
               <span className="text-[#9E0F14]">!</span>
             </div>
@@ -1046,16 +1107,6 @@ const Index: React.FC = () => {
           <aside className="hidden lg:block self-start sticky top-[112px] h-[calc(100dvh-128px)]">
             <div className="h-full rounded-[26px] border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 flex flex-col gap-3">
-                {isLoggedIn && (
-                  <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
-                    <div className="text-[22px] font-extrabold leading-tight text-gray-900">
-                      <span className="mr-1">Bem-vindo,</span>
-                      <span className="text-gray-900">{displayName}</span>
-                      <span className="text-[#9E0F14]">!</span>
-                    </div>
-                  </div>
-                )}
-
                 <SwitchPricing />
 
                 {isAdmin && (
@@ -1350,16 +1401,6 @@ const Index: React.FC = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    {isLoggedIn && (
-                      <div className="rounded-2xl border border-gray-200 bg-gradient-to-br from-white via-gray-50 to-gray-100 px-4 py-4 shadow-sm">
-                        <div className="text-[20px] font-extrabold leading-tight text-gray-900">
-                          <span className="mr-1">Bem-vindo,</span>
-                          <span className="text-gray-900">{displayName}</span>
-                          <span className="text-[#9E0F14]">!</span>
-                        </div>
-                      </div>
-                    )}
-
                     <SwitchPricing compact />
 
                     {isAdmin && (
@@ -1426,6 +1467,103 @@ const Index: React.FC = () => {
 
               {/* safe area spacer */}
               <div className="h-[max(12px,env(safe-area-inset-bottom))]" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div
+        data-search-keyboard="1"
+        data-testid="catalog-search-keyboard"
+        className={[
+          "fixed inset-x-0 bottom-0 z-[85] transition-all duration-200",
+          searchKeyboardOpen ? "translate-y-0 opacity-100" : "translate-y-[110%] opacity-0 pointer-events-none",
+        ].join(" ")}
+      >
+        <div className="border-t border-black/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(255,255,255,0.995))] px-3 pb-[calc(12px+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_64px_rgba(0,0,0,0.18)] backdrop-blur-xl sm:px-4 sm:pt-4">
+          <div className="mx-auto w-full max-w-[1280px]">
+            <div className="mb-3 flex items-center justify-between gap-3 sm:mb-4">
+              <div className="inline-flex items-center gap-2 rounded-full border border-[#7d1717]/12 bg-[#7d1717]/5 px-4 py-2 text-[14px] font-black text-[#6a1f1f] sm:text-[16px]">
+                <Keyboard className="h-4 w-4 sm:h-5 sm:w-5" />
+                Buscar produto
+              </div>
+              <button
+                type="button"
+                data-testid="catalog-search-close"
+                onClick={() => setSearchKeyboardOpen(false)}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-black/10 bg-white px-4 text-[14px] font-black text-gray-800 shadow-[0_10px_24px_rgba(0,0,0,0.08)] active:scale-[0.98]"
+              >
+                <X className="h-4 w-4" />
+                Fechar
+              </button>
+            </div>
+
+            <div className="space-y-2 sm:space-y-3">
+              {TOTEM_NAME_KEYBOARD_ROWS.map((row, rowIndex) => (
+                <div
+                  key={rowIndex}
+                  className={`grid gap-2 sm:gap-3 ${
+                    rowIndex === 1
+                      ? "grid-cols-9 px-1 sm:px-6"
+                      : rowIndex === 2
+                      ? "grid-cols-7 px-6 sm:px-16"
+                      : "grid-cols-10"
+                  }`}
+                >
+                  {row.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      data-testid={`catalog-search-key-${key}`}
+                      onClick={() => handleSearchKeyPress(key)}
+                      className="h-[58px] rounded-[18px] border border-white/50 bg-white text-[22px] font-black text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[84px] sm:rounded-[22px] sm:text-[34px]"
+                    >
+                      {key}
+                    </button>
+                  ))}
+                </div>
+              ))}
+
+              <div className="grid grid-cols-[1.4fr_2.8fr_1.2fr_1.4fr] gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  data-testid="catalog-search-backspace"
+                  onClick={handleSearchBackspace}
+                  className="h-[58px] rounded-[18px] border border-white/50 bg-white px-3 text-[18px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[84px] sm:rounded-[22px] sm:text-[26px]"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <Delete className="h-5 w-5 sm:h-6 sm:w-6" />
+                    Apagar
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="catalog-search-space"
+                  onClick={() => handleSearchKeyPress("SPACE")}
+                  className="h-[58px] rounded-[18px] border border-white/50 bg-white text-[18px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[84px] sm:rounded-[22px] sm:text-[26px]"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <SpaceIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+                    Espaço
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="catalog-search-zero"
+                  onClick={() => handleSearchKeyPress("0")}
+                  className="h-[58px] rounded-[18px] border border-white/50 bg-white text-[22px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[84px] sm:rounded-[22px] sm:text-[34px]"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  data-testid="catalog-search-clear-keyboard"
+                  onClick={() => setSearchTerm("")}
+                  className="h-[58px] rounded-[18px] bg-[linear-gradient(180deg,#c22b2b_0%,#7f0b0f_100%)] text-[18px] font-extrabold text-white shadow-[0_18px_32px_rgba(126,11,15,0.28)] active:scale-[0.97] sm:h-[84px] sm:rounded-[22px] sm:text-[24px]"
+                >
+                  Limpar
+                </button>
+              </div>
             </div>
           </div>
         </div>

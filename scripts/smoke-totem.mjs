@@ -1,29 +1,15 @@
-import http from "node:http";
-import { mkdir, readFile, stat } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
-const distDir = path.join(rootDir, "dist");
 const outputDir = path.join(rootDir, "output", "playwright");
 const scenario = process.env.SMOKE_TOTEM_SCENARIO?.trim() || "success";
-
-const MIME_TYPES = {
-  ".css": "text/css; charset=utf-8",
-  ".html": "text/html; charset=utf-8",
-  ".ico": "image/x-icon",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".js": "application/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
-  ".svg": "image/svg+xml; charset=utf-8",
-  ".webmanifest": "application/manifest+json; charset=utf-8",
-  ".woff2": "font/woff2",
-};
+const previewPort = Number(process.env.SMOKE_TOTEM_PORT || 4175);
 
 const sampleProducts = [
   {
@@ -66,53 +52,55 @@ const sampleProducts = [
   },
 ];
 
-function getMimeType(filePath) {
-  return MIME_TYPES[path.extname(filePath).toLowerCase()] || "application/octet-stream";
-}
+async function waitForServer(url, timeoutMs = 30000) {
+  const startedAt = Date.now();
 
-async function resolveStaticFile(urlPathname) {
-  const cleanPath = decodeURIComponent(urlPathname.split("?")[0]);
-  const relative = cleanPath === "/" ? "/index.html" : cleanPath;
-  const targetPath = path.normalize(path.join(distDir, relative));
-
-  if (!targetPath.startsWith(distDir)) {
-    return path.join(distDir, "index.html");
-  }
-
-  try {
-    const info = await stat(targetPath);
-    if (info.isDirectory()) {
-      return path.join(targetPath, "index.html");
-    }
-    return targetPath;
-  } catch {
-    return path.join(distDir, "index.html");
-  }
-}
-
-async function startStaticServer() {
-  const server = http.createServer(async (req, res) => {
+  while (Date.now() - startedAt < timeoutMs) {
     try {
-      const filePath = await resolveStaticFile(req.url || "/");
-      const content = await readFile(filePath);
-      res.writeHead(200, { "content-type": getMimeType(filePath) });
-      res.end(content);
-    } catch (error) {
-      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
-      res.end(String(error));
+      const response = await fetch(url, { redirect: "manual" });
+      if (response.ok || response.status === 304) {
+        return;
+      }
+    } catch {}
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  throw new Error(`Timeout aguardando servidor do smoke em ${url}.`);
+}
+
+async function startPreviewServer() {
+  const child = spawn(
+    "npm",
+    ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(previewPort), "--strictPort"],
+    {
+      cwd: rootDir,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env,
     }
+  );
+
+  let stdout = "";
+  let stderr = "";
+
+  child.stdout.on("data", (chunk) => {
+    stdout += String(chunk);
   });
 
-  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Não foi possível iniciar o servidor do smoke test.");
+  child.stderr.on("data", (chunk) => {
+    stderr += String(chunk);
+  });
+
+  const baseUrl = `http://127.0.0.1:${previewPort}`;
+
+  try {
+    await waitForServer(baseUrl);
+  } catch (error) {
+    child.kill("SIGTERM");
+    throw new Error(`Falha ao iniciar vite preview.\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
   }
 
-  return {
-    server,
-    baseUrl: `http://127.0.0.1:${address.port}`,
-  };
+  return { child, baseUrl };
 }
 
 async function installMockRoutes(page) {
@@ -166,15 +154,6 @@ async function installMockRoutes(page) {
     }
 
     if (request.method() === "POST" && !url.origin.startsWith("http://127.0.0.1")) {
-      if (scenario === "webhook_fail") {
-        await route.fulfill({
-          status: 500,
-          contentType: "application/json",
-          body: JSON.stringify({ error: "saibweb indisponivel" }),
-        });
-        return;
-      }
-
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -191,32 +170,75 @@ async function run() {
   await mkdir(outputDir, { recursive: true });
 
   const externalBaseUrl = process.env.SMOKE_TOTEM_BASE_URL?.trim() || "";
-  const localServer = externalBaseUrl ? null : await startStaticServer();
+  const localServer = externalBaseUrl ? null : await startPreviewServer();
   const baseUrl = externalBaseUrl || localServer.baseUrl;
   const browser = await chromium.launch({ headless: process.env.SMOKE_TOTEM_HEADFUL !== "1" });
-  const page = await browser.newPage({
+  const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
+    serviceWorkers: "block",
+  });
+  const page = await context.newPage();
+  const pageErrors = [];
+  const consoleErrors = [];
+
+  page.on("pageerror", (error) => {
+    pageErrors.push(String(error));
+  });
+
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      consoleErrors.push(msg.text());
+    }
   });
 
   try {
     await installMockRoutes(page);
+    if (scenario === "webhook_fail") {
+      await page.addInitScript(() => {
+        window.__GM_SMOKE_SAIBWEB_FAILURE__ = true;
+      });
+    }
 
-    await page.goto(`${baseUrl}/inicio`, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: "Começar" }).click();
+    await page.goto(`${baseUrl}/contexto`, { waitUntil: "networkidle" });
+    if (pageErrors.length) {
+      throw new Error(`Page errors ao abrir /contexto: ${pageErrors.join(" | ")}`);
+    }
+    if (consoleErrors.length) {
+      throw new Error(`Console errors ao abrir /contexto: ${consoleErrors.join(" | ")}`);
+    }
+    await page.getByTestId("context-channel-varejo").click();
+    await page.getByTestId("totem-name-key-S").click();
+    await page.getByTestId("totem-name-key-M").click();
+    await page.getByTestId("totem-name-key-O").click();
+    await page.getByTestId("totem-name-key-K").click();
+    await page.getByTestId("totem-name-key-E").click();
+    await page.getByTestId("totem-name-confirm").click();
+    await page.getByTestId("catalog-search-input").waitFor({ state: "visible" });
 
-    await page.getByRole("button", { name: "VAREJO" }).click();
-    await page.getByPlaceholder("Buscar produto (nome ou código)...").waitFor({ state: "visible" });
-
-    await page.getByRole("button", { name: "Adicionar" }).first().click();
+    await page.getByTestId(`add-to-cart-${sampleProducts[0].id}`).click();
     await page.getByLabel("Abrir sua sacola").click();
-    await page.getByRole("button", { name: "Finalizar" }).click();
+    await page.getByTestId("cart-finalize").click();
+    if (pageErrors.length) {
+      throw new Error(`Page errors ao abrir checkout: ${pageErrors.join(" | ")}`);
+    }
+    if (consoleErrors.length) {
+      throw new Error(`Console errors ao abrir checkout: ${consoleErrors.join(" | ")}`);
+    }
 
-    await page.locator("#customer-name").fill("Smoke Test");
-    await page.getByRole("button", { name: "Confirmar pedido" }).click();
+    await page.getByTestId("checkout-customer-name").fill("Smoke Test");
+    await page.getByTestId("checkout-confirm-order").click();
 
-    await page.getByText("Pedido enviado!").waitFor({ state: "visible" });
+    await page.getByTestId("checkout-success-overlay").waitFor({ state: "visible" });
     if (scenario === "webhook_fail") {
       await page.getByText("Pedido salvo com pendência de integração").waitFor({ state: "visible" });
+    }
+
+    if (pageErrors.length) {
+      throw new Error(`Page errors durante o smoke: ${pageErrors.join(" | ")}`);
+    }
+
+    if (consoleErrors.length) {
+      throw new Error(`Console errors durante o smoke: ${consoleErrors.join(" | ")}`);
     }
 
     await page.screenshot({
@@ -230,13 +252,24 @@ async function run() {
       path: path.join(outputDir, `smoke-totem-${scenario}-failure.png`),
       fullPage: true,
     }).catch(() => {});
+    const diagnostics = [
+      pageErrors.length ? `pageErrors=${pageErrors.join(" | ")}` : "",
+      consoleErrors.length ? `consoleErrors=${consoleErrors.join(" | ")}` : "",
+      `url=${page.url()}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    if (diagnostics) {
+      throw new Error(`${String(error)}\n${diagnostics}`);
+    }
+
     throw error;
   } finally {
+    await context.close();
     await browser.close();
-    if (localServer?.server) {
-      await new Promise((resolve, reject) =>
-        localServer.server.close((err) => (err ? reject(err) : resolve()))
-      );
+    if (localServer?.child) {
+      localServer.child.kill("SIGTERM");
     }
   }
 }

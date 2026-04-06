@@ -31,7 +31,7 @@ export interface Product {
   price: number;
 
   // 💰 Preço exclusivo para funcionários (vem do Supabase)
-  employee_price: number;
+  employee_price?: number;
 
   // 🖼️ Lista de imagens (para o carousel)
   images: string[];

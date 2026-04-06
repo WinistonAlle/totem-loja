@@ -1,4 +1,5 @@
 // src/utils/pricingContext.ts
+import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 import { resolveProductPrice } from "./productPricing";
 
 export type CustomerType = "cpf" | "cnpj";
@@ -12,9 +13,24 @@ export type PricingContext = {
   customer_name?: string;
 };
 
-export function getPricingContext(): PricingContext | null {
+const PRICING_CONTEXT_KEY = "pricing_context";
+
+function getStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+
   try {
-    const raw = localStorage.getItem("pricing_context");
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+export function getPricingContext(): PricingContext | null {
+  const storage = getStorage();
+  if (!storage) return null;
+
+  try {
+    const raw = storage.getItem(PRICING_CONTEXT_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
 
@@ -22,6 +38,7 @@ export function getPricingContext(): PricingContext | null {
     const channel = parsed?.channel;
 
     if ((customer_type !== "cpf" && customer_type !== "cnpj") || (channel !== "varejo" && channel !== "atacado")) {
+      storage.removeItem(PRICING_CONTEXT_KEY);
       return null;
     }
 
@@ -51,18 +68,21 @@ export function getPricingContextCustomerName(): string {
 }
 
 export function updatePricingContextCustomerName(name: string) {
+  const storage = getStorage();
+  if (!storage) return;
+
   try {
-    const raw = localStorage.getItem("pricing_context");
+    const raw = storage.getItem(PRICING_CONTEXT_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    localStorage.setItem(
-      "pricing_context",
+    storage.setItem(
+      PRICING_CONTEXT_KEY,
       JSON.stringify({
         ...parsed,
         customer_name: name.trim(),
       })
     );
-    window.dispatchEvent(new Event("pricing_context_changed"));
+    emitAppEvent(APP_EVENT.pricingContextChanged);
   } catch {}
 }
 

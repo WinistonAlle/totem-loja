@@ -1,6 +1,7 @@
 // src/pages/FavoritesPage.tsx
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { APP_EVENT, subscribeAppEvent } from "@/lib/appEvents";
 import { supabase } from "@/lib/supabase";
 import type { Product } from "../types/products";
 
@@ -165,10 +166,10 @@ const FavoritesPage: React.FC = () => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "pricing_context") setPricingTick((t) => t + 1);
     };
-    window.addEventListener("pricing_context_changed" as any, onPricing);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("pricing_context_changed" as any, onPricing);
+      unsubscribe();
       window.removeEventListener("storage", onStorage);
     };
   }, []);

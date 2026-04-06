@@ -21,6 +21,7 @@ type CreateOrderInput = {
 const SAIBWEB_WEBHOOK_URL = import.meta.env.VITE_SAIBWEB_WEBHOOK_URL?.trim() || "";
 const SAIBWEB_WEBHOOK_TOKEN = import.meta.env.VITE_SAIBWEB_WEBHOOK_TOKEN?.trim() || "";
 const REQUIRE_ORDER_RPC = String(import.meta.env.VITE_REQUIRE_ORDER_RPC ?? "").toLowerCase() === "true";
+const SAIBWEB_TIMEOUT_MS = 12000;
 
 type ChannelType = "varejo" | "atacado";
 
@@ -50,6 +51,14 @@ type CreateOrderResult = {
   saibwebQueued: boolean;
   saibwebError?: string | null;
 };
+
+async function recordOrderEventSafe(input: Parameters<typeof recordSystemEvent>[0]) {
+  try {
+    await recordSystemEvent(input);
+  } catch (error) {
+    console.warn("Falha ao registrar evento de sistema do pedido.", error);
+  }
+}
 
 function toCents(value: any): number {
   const n = Number(value);
@@ -152,16 +161,34 @@ async function markSaibwebQueued(orderId: string) {
 }
 
 async function enqueueSaibwebOrder(orderId: string) {
+  if (typeof window !== "undefined" && (window as any).__GM_SMOKE_SAIBWEB_FAILURE__ === true) {
+    throw new Error("saibweb indisponivel");
+  }
+
   if (!SAIBWEB_WEBHOOK_URL) return { queued: false, skipped: true };
 
-  const response = await fetch(SAIBWEB_WEBHOOK_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(SAIBWEB_WEBHOOK_TOKEN ? { "x-webhook-token": SAIBWEB_WEBHOOK_TOKEN } : {}),
-    },
-    body: JSON.stringify({ order_id: orderId }),
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), SAIBWEB_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(SAIBWEB_WEBHOOK_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(SAIBWEB_WEBHOOK_TOKEN ? { "x-webhook-token": SAIBWEB_WEBHOOK_TOKEN } : {}),
+      },
+      body: JSON.stringify({ order_id: orderId }),
+      signal: controller.signal,
+    });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error(`Timeout ao enfileirar pedido no SAIBWEB (${SAIBWEB_TIMEOUT_MS}ms).`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
@@ -196,7 +223,7 @@ async function finalizeSaibweb(orderId: string, orderNumber: string | null): Pro
       saibwebError,
     };
   } finally {
-    await recordSystemEvent({
+    await recordOrderEventSafe({
       eventName: "order_saibweb_status",
       severity: "info",
       message: "Pedido processado para integracao SAIBWEB.",
@@ -253,7 +280,7 @@ async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrde
     throw new Error("Falha ao criar pedido via RPC.");
   }
 
-  await recordSystemEvent({
+  await recordOrderEventSafe({
     eventName: "order_rpc_success",
     severity: "info",
     message: "Pedido criado via RPC transacional.",
@@ -354,7 +381,7 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
     throw itemsErr;
   }
 
-  await recordSystemEvent({
+  await recordOrderEventSafe({
     eventName: "order_client_fallback",
     severity: REQUIRE_ORDER_RPC ? "error" : "warning",
     message: "Pedido criado pelo fluxo cliente fallback.",
@@ -375,7 +402,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
   try {
     const rpcResult = await tryCreateOrderViaRpc(input);
     if (rpcResult) {
-      await recordSystemEvent({
+      await recordOrderEventSafe({
         eventName: "order_success",
         severity: "info",
         message: "Pedido finalizado com sucesso.",
@@ -390,7 +417,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     }
 
     const fallbackResult = await createOrderViaClientFallback(input);
-    await recordSystemEvent({
+    await recordOrderEventSafe({
       eventName: "order_success",
       severity: "warning",
       message: "Pedido finalizado com sucesso via fallback cliente.",
@@ -403,7 +430,7 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
     });
     return fallbackResult;
   } catch (error: any) {
-    await recordSystemEvent({
+    await recordOrderEventSafe({
       eventName: "order_failure",
       severity: "error",
       message: error?.message || "Falha ao criar pedido.",

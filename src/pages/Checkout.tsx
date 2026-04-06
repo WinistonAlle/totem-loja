@@ -5,9 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { useNavigate } from "react-router-dom";
+import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 import { createOrder } from "@/services/orders";
-import { getPricingChannel, getPricingContext } from "@/utils/pricingContext";
+import { getPricingChannel, getPricingContext, hasPricingContext, updatePricingContextCustomerName } from "@/utils/pricingContext";
+import { clearCustomerSession as clearStoredCustomerSession } from "@/utils/customerSession";
+import { getProductUnitPrice } from "@/utils/productData";
 import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
+import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
 
 import logo from "../images/logoc.png";
 
@@ -15,10 +19,11 @@ import logo from "../images/logoc.png";
    SESSION HELPERS
 -------------------------------------------------------- */
 function clearCustomerSession() {
-  localStorage.removeItem("customer_session");
-  localStorage.removeItem("pricing_context");
-  window.dispatchEvent(new Event("customer_session_changed"));
-  window.dispatchEvent(new Event("pricing_context_changed"));
+  try {
+    localStorage.removeItem("pricing_context");
+  } catch {}
+  clearStoredCustomerSession();
+  emitAppEvent(APP_EVENT.pricingContextChanged);
 }
 
 function formatBRLFromCents(cents: number) {
@@ -27,8 +32,7 @@ function formatBRLFromCents(cents: number) {
 }
 
 function getUnitPrice(product: any) {
-  const raw = Number(product?.employee_price ?? product?.price ?? 0);
-  return Number.isFinite(raw) ? raw : 0;
+  return getProductUnitPrice(product ?? {});
 }
 
 /* --------------------------------------------------------
@@ -50,7 +54,7 @@ function SuccessOverlay({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4 sm:px-6">
+    <div data-testid="checkout-success-overlay" className="fixed inset-0 z-[9999] flex items-center justify-center px-4 sm:px-6">
       <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" />
 
       <div className="relative w-full max-w-[650px] rounded-[26px] sm:rounded-[35px] bg-white border shadow-2xl p-5 sm:p-[35px] overflow-hidden">
@@ -80,7 +84,7 @@ function SuccessOverlay({
           </p>
 
           <div className="mt-6 sm:mt-8 grid gap-4">
-            <Button onClick={onGoStartNow} className="w-full h-14 sm:h-[70px] text-base sm:text-xl font-semibold rounded-[18px] sm:rounded-[20px]">
+            <Button data-testid="checkout-success-go-start" onClick={onGoStartNow} className="w-full h-14 sm:h-[70px] text-base sm:text-xl font-semibold rounded-[18px] sm:rounded-[20px]">
               Voltar ao início agora
             </Button>
 
@@ -120,9 +124,21 @@ const Checkout: React.FC = () => {
 
   const goStartWithLogout = () => {
     clearCart();
+    clearAllCartKeysFromStorage();
     clearCustomerSession();
     navigate("/inicio", { replace: true });
   };
+
+  useEffect(() => {
+    if (!hasPricingContext()) {
+      navigate("/contexto", { replace: true });
+    }
+  }, [navigate]);
+
+  useEffect(() => {
+    const nextName = getPricingContext()?.customer_name ?? "";
+    setCustomerName((current) => (current === nextName ? current : nextName));
+  }, []);
 
   useEffect(() => {
     if (!successOpen) return;
@@ -145,6 +161,8 @@ const Checkout: React.FC = () => {
   }, [successOpen]);
 
   const handleConfirm = async () => {
+    if (isSubmitting || successOpen) return;
+
     if (cartItems.length === 0) {
       toast.error("Carrinho vazio!", { description: "Não é possível confirmar um pedido vazio." });
       return;
@@ -164,6 +182,8 @@ const Checkout: React.FC = () => {
         setIsSubmitting(false);
         return;
       }
+
+      updatePricingContextCustomerName(trimmedCustomerName);
 
       if (pricingChannel === "atacado" && !wholesaleUnlocked) {
         toast.error("Atacado indisponível para este pedido", {
@@ -404,6 +424,7 @@ const Checkout: React.FC = () => {
                   </label>
                   <Input
                     id="customer-name"
+                    data-testid="checkout-customer-name"
                     value={customerName}
                     onChange={(e) => setCustomerName(e.target.value)}
                     placeholder="Ex.: Joao Silva"
@@ -472,6 +493,7 @@ const Checkout: React.FC = () => {
               <Button
                 className={`totem-primary shine`}
                 onClick={handleConfirm}
+                data-testid="checkout-confirm-order"
                 disabled={isSubmitting || successOpen}
                 aria-busy={isSubmitting ? "true" : "false"}
               >

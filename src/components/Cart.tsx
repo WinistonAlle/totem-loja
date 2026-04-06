@@ -68,6 +68,7 @@ const Cart: React.FC = () => {
         `}
         role="dialog"
         aria-label="Sua sacola"
+        data-testid="cart-sheet"
       >
         {/* Header (MOBILE mais compacto) */}
         <div className="px-5 py-4 sm:px-8 sm:py-6 border-b border-gray-100 flex items-center justify-between shrink-0">
@@ -82,6 +83,7 @@ const Cart: React.FC = () => {
 
           <button
             onClick={close}
+            data-testid="cart-close"
             className="
               h-11 w-11 sm:h-14 sm:w-14
               rounded-2xl sm:rounded-3xl
@@ -257,6 +259,7 @@ const Cart: React.FC = () => {
           <div className="flex items-center gap-3 sm:gap-4">
             <Button
               variant="outline"
+              data-testid="cart-continue"
               className="h-12 sm:h-16 rounded-2xl sm:rounded-3xl px-5 sm:px-8 font-extrabold text-[14px] sm:text-[18px]"
               onClick={close}
             >
@@ -264,6 +267,7 @@ const Cart: React.FC = () => {
             </Button>
 
             <Button
+              data-testid="cart-finalize"
               className="h-12 sm:h-16 rounded-2xl sm:rounded-3xl px-6 sm:px-9 font-extrabold text-[14px] sm:text-[18px] bg-black text-white hover:bg-gray-900 flex-1"
               onClick={() => {
                 close();

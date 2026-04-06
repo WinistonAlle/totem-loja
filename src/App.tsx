@@ -7,11 +7,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
+import { APP_EVENT, emitAppEvent, subscribeAppEvent } from "@/lib/appEvents";
 import { recordSystemEvent } from "@/lib/systemEvents";
-import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
+import {
+  clearCustomerSession,
+  getCustomerSessionSnapshotOrNull,
+  saveCustomerSession,
+} from "@/utils/customerSession";
 
 import { CartProvider } from "@/contexts/CartContext";
 import { useCart } from "@/contexts/CartContext";
+import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
 import { supabase } from "@/lib/supabase";
 
 const Login = lazy(() => import("./pages/Login"));
@@ -42,7 +48,7 @@ type CustomerSession = {
 
 // ✅ robusto: aceita document em variações (caso seu banco esteja diferente)
 function getCustomerSession(): CustomerSession | null {
-  const parsed: any = getCustomerSessionSnapshotOrNull();
+  const parsed = getCustomerSessionSnapshotOrNull<CustomerSession & Record<string, unknown>>();
   if (!parsed || typeof parsed !== "object") {
     return null;
   }
@@ -59,10 +65,17 @@ function getCustomerSession(): CustomerSession | null {
   if (!id && !document) return null;
 
   return {
-    id,
-    name: parsed.name ?? parsed.customer_name ?? parsed.full_name ?? null,
-    document,
-    role: (parsed.role ?? parsed.tipo ?? null) as any,
+    id: typeof id === "string" || typeof id === "number" ? id : undefined,
+    name:
+      typeof parsed.name === "string"
+        ? parsed.name
+        : typeof parsed.customer_name === "string"
+        ? parsed.customer_name
+        : typeof parsed.full_name === "string"
+        ? parsed.full_name
+        : null,
+    document: typeof document === "string" ? document : null,
+    role: (parsed.role ?? parsed.tipo ?? null) as Role | null,
   };
 }
 
@@ -80,11 +93,11 @@ function RequireAuth({ children }: { children: JSX.Element }) {
     window.addEventListener("storage", onStorage);
 
     const onLocal = () => setTick((t) => t + 1);
-    window.addEventListener("customer_session_changed" as any, onLocal);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.customerSessionChanged, onLocal);
 
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("customer_session_changed" as any, onLocal);
+      unsubscribe();
     };
   }, []);
 
@@ -113,11 +126,11 @@ function RequireRole({
     window.addEventListener("storage", onStorage);
 
     const onLocal = () => setTick((t) => t + 1);
-    window.addEventListener("customer_session_changed" as any, onLocal);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.customerSessionChanged, onLocal);
 
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener("customer_session_changed" as any, onLocal);
+      unsubscribe();
     };
   }, []);
 
@@ -174,8 +187,7 @@ function RequireRole({
           try {
             const fresh = getCustomerSession();
             if (fresh) {
-              localStorage.setItem("customer_session", JSON.stringify({ ...fresh, role }));
-              window.dispatchEvent(new Event("customer_session_changed"));
+              saveCustomerSession({ ...fresh, role });
             }
           } catch {}
         }
@@ -210,27 +222,11 @@ function RootRedirect() {
   return <Navigate to="/inicio" replace />;
 }
 
-function clearAllCartKeysFromStorage() {
-  try {
-    const keys: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) keys.push(key);
-    }
-
-    keys.forEach((key) => {
-      if (key.startsWith("cart_") || key.startsWith("gm_cart_")) {
-        localStorage.removeItem(key);
-      }
-    });
-  } catch {}
-}
-
 function GlobalInactivityGuard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearCart, closeCart } = useCart();
-  const isDisabledRoute = location.pathname === "/inicio";
+  const isDisabledRoute = ["/inicio", "/checkout"].includes(location.pathname);
 
   const INACTIVITY_LIMIT = 25000;
   const COUNTDOWN_SECONDS = 5;
@@ -238,8 +234,8 @@ function GlobalInactivityGuard() {
   const [isIdleWarning, setIsIdleWarning] = useState(false);
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
 
-  const idleTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const idleTimeoutRef = useRef<number | null>(null);
+  const countdownIntervalRef = useRef<number | null>(null);
 
   const resetTotemSessionAndGoStart = () => {
     try {
@@ -248,10 +244,8 @@ function GlobalInactivityGuard() {
       clearAllCartKeysFromStorage();
 
       localStorage.removeItem("pricing_context");
-      localStorage.removeItem("customer_session");
-
-      window.dispatchEvent(new Event("pricing_context_changed"));
-      window.dispatchEvent(new Event("customer_session_changed"));
+      clearCustomerSession();
+      emitAppEvent(APP_EVENT.pricingContextChanged);
     } catch {}
 
     navigate("/inicio", { replace: true });

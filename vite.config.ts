@@ -1,11 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig(() => ({
   server: {
     host: "0.0.0.0",
     port: 4174,
@@ -21,8 +20,6 @@ export default defineConfig(({ mode }) => ({
       // ✅ injeta o registro automaticamente (sem precisar mexer no main.tsx)
       injectRegister: "auto",
       registerType: "autoUpdate",
-      cleanupOutdatedCaches: true,
-
       // Evita SW ativo em desenvolvimento, que costuma deixar caches/states quebrados.
       devOptions: { enabled: false },
 
@@ -50,22 +47,32 @@ export default defineConfig(({ mode }) => ({
 
       workbox: {
         clientsClaim: true,
+        cleanupOutdatedCaches: true,
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: "/index.html",
         skipWaiting: true,
         globIgnores: [
           "**/assets/Admin-*.js",
           "**/assets/AdminOrders-*.js",
+          "**/assets/Avisos-*.js",
+          "**/assets/Cadastro-*.js",
+          "**/assets/Destaques-*.js",
+          "**/assets/Favorites-*.js",
+          "**/assets/Login-*.js",
           "**/assets/ReportsDashboard-*.js",
           "**/assets/ReportsCharts-*.js",
           "**/assets/charts-vendor-*.js",
+          "**/assets/html2canvas*.js",
+          "**/assets/index.es-*.js",
+          "**/assets/jspdf*.js",
+          "**/assets/logoc-*.png",
+          "**/assets/*hero-*.png",
           "**/assets/pdf-vendor-*.js",
           "**/assets/pdf-table-vendor-*.js",
+          "**/assets/SystemDiagnostics-*.js",
         ],
       },
     }),
-
-    mode === "production" && componentTagger(),
   ].filter(Boolean),
 
   resolve: {
@@ -74,67 +81,5 @@ export default defineConfig(({ mode }) => ({
     },
   },
 
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-
-          if (id.includes("react") || id.includes("scheduler")) {
-            return "react-vendor";
-          }
-
-          if (id.includes("react-router-dom") || id.includes("@remix-run")) {
-            return "router-vendor";
-          }
-
-          if (id.includes("@tanstack/react-query")) {
-            return "query-vendor";
-          }
-
-          if (id.includes("@supabase")) {
-            return "supabase-vendor";
-          }
-
-          if (id.includes("@radix-ui")) {
-            return "radix-vendor";
-          }
-
-          if (id.includes("framer-motion")) {
-            return "motion-vendor";
-          }
-
-          if (
-            id.includes("recharts") ||
-            id.includes("d3-") ||
-            id.includes("victory-vendor")
-          ) {
-            return "charts-vendor";
-          }
-
-          if (id.includes("jspdf-autotable")) {
-            return "pdf-table-vendor";
-          }
-
-          if (id.includes("jspdf") || id.includes("html2canvas")) {
-            return "pdf-vendor";
-          }
-
-          if (id.includes("styled-components")) {
-            return "styled-vendor";
-          }
-
-          if (id.includes("lucide-react")) {
-            return "icons-vendor";
-          }
-
-          if (id.includes("embla-carousel") || id.includes("react-hook-form") || id.includes("zod")) {
-            return "ui-vendor";
-          }
-
-          return "vendor";
-        },
-      },
-    },
-  },
+  build: {},
 }));

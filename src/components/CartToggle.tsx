@@ -1,12 +1,14 @@
 // src/components/CartToggle.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ShoppingBag } from "lucide-react";
+import { APP_EVENT, subscribeAppEvent } from "@/lib/appEvents";
 import { useCart } from "../contexts/CartContext";
+import { getProductUnitPrice } from "@/utils/productData";
 import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 function getLinePrice(item: any) {
   const p = item?.product ?? {};
-  const price = Number(p.employee_price ?? p.price ?? 0);
+  const price = getProductUnitPrice(p);
   const qty = Number(item?.quantity ?? 0);
   return price * qty;
 }
@@ -72,10 +74,10 @@ const CartToggle: React.FC = () => {
       if (e.key === "pricing_context") onPricing();
     };
 
-    window.addEventListener("pricing_context_changed" as any, onPricing);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
     window.addEventListener("storage", onStorage);
     return () => {
-      window.removeEventListener("pricing_context_changed" as any, onPricing);
+      unsubscribe();
       window.removeEventListener("storage", onStorage);
     };
   }, []);

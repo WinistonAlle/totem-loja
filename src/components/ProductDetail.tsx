@@ -13,6 +13,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { useCart } from "@/contexts/CartContext";
 import { toast } from "./ui/sonner";
+import { getProductImages, getProductPackageInfo, getProductUnitPrice, getProductWeight, toBool } from "@/utils/productData";
 
 interface ProductDetailProps {
   product: Product;
@@ -28,32 +29,13 @@ const ProductDetail: React.FC<ProductDetailProps> = ({
   const { addToCart, decreaseQuantity, updateQuantity, cartItems } = useCart();
 
   // ---- campos flexíveis vindos do Supabase ----
-  const images: string[] = Array.isArray((product as any).images)
-    ? ((product as any).images as string[])
-    : [];
-
-  const packageInfo: string =
-    (product as any).packageInfo ??
-    (product as any).package_info ??
-    "";
-
-  const rawWeight =
-    typeof (product as any).weight === "number"
-      ? (product as any).weight
-      : Number((product as any).weight ?? 0) || null;
-
-  const isPackage =
-    (product as any).isPackage ?? (product as any).is_package ?? false;
-
-  const isInStock =
-    (product as any).inStock ??
-    (product as any).in_stock ??
-    true;
-
-  const employeePrice =
-    (product as any).employee_price ??
-    (product as any).price ??
-    0;
+  const productData = product as unknown as Record<string, unknown>;
+  const images = getProductImages(productData);
+  const packageInfo = getProductPackageInfo(productData);
+  const rawWeight = getProductWeight(productData) || null;
+  const isPackage = toBool(product.isPackage ?? productData.is_package ?? false);
+  const isInStock = toBool(product.inStock ?? productData.in_stock ?? true);
+  const employeePrice = getProductUnitPrice(productData);
 
   const extraInfo = (product as any).extraInfo ?? {};
 

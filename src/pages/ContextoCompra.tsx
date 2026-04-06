@@ -198,6 +198,7 @@ export default function ContextoCompra() {
       <Screen>
         <TopBar>
           <BackBtn
+            data-testid="context-back"
             onClick={() => {
               localStorage.removeItem("pricing_context");
               window.dispatchEvent(new Event("pricing_context_changed"));
@@ -216,8 +217,20 @@ export default function ContextoCompra() {
             <Question>Escolha o tipo de compra</Question>
 
             <Options>
-              <OptionBtn onClick={() => handleChannel("varejo")}>VAREJO</OptionBtn>
-              <OptionBtn onClick={() => handleChannel("atacado")}>ATACADO</OptionBtn>
+              <OptionBtn
+                data-testid="context-channel-varejo"
+                aria-label="Selecionar varejo"
+                onClick={() => handleChannel("varejo")}
+              >
+                VAREJO
+              </OptionBtn>
+              <OptionBtn
+                data-testid="context-channel-atacado"
+                aria-label="Selecionar atacado"
+                onClick={() => handleChannel("atacado")}
+              >
+                ATACADO
+              </OptionBtn>
             </Options>
           </>
         </Content>

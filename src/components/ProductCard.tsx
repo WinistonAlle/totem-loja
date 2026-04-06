@@ -10,6 +10,7 @@ import { toast } from "./ui/sonner";
 import ProductRetailModal from "@/components/ProductRetailModal";
 import { resolveProductPrice as resolvePricingValue } from "@/utils/productPricing";
 import { getPricingContext } from "@/utils/pricingContext";
+import { getProductImages, getProductUnitPrice, getProductWeight, stampProductPrice } from "@/utils/productData";
 
 /* --------------------------------------------------------
    PRICING CONTEXT (CPF/CNPJ + ATACADO/VAREJO)
@@ -29,13 +30,6 @@ interface ProductCardProps {
   hideImages?: boolean;
 }
 
-function getRetailImage(p: any): string | undefined {
-  if (p?.images?.length) return p.images[0];
-  if (p?.image_path) return p.image_path;
-  if (p?.image) return p.image;
-  return undefined;
-}
-
 function formatBRL(value: number) {
   const n = Number(value || 0);
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -53,16 +47,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
 
   // ✅ Produto “com preço carimbado” (cart)
   const pricedProduct: Product = useMemo(() => {
-    return {
-      ...(product as any),
-      price,
-      employee_price: price,
-      customer_price: price,
-      retail_price: price,
-      wholesale_price: price,
-      atacado_price: price,
-      varejo_price: price,
-    } as Product;
+    return stampProductPrice(product as unknown as Record<string, unknown>, price) as Product;
   }, [product, price]);
 
   const isAvailable = product.inStock !== false;
@@ -105,12 +90,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
 
   const retailProduct: any = {
     ...product,
-    image: getRetailImage(product),
+    image: getProductImages(product as unknown as Record<string, unknown>)[0],
     price,
     category: product.category,
     description: desc.trim() || extra.trim() || "",
     unit_label: product.isPackage ? "Pacote" : "Unidade",
-    weight_kg: (product as any).weight_kg ?? (product as any).weightKg ?? undefined,
+    weight_kg: getProductWeight(product as unknown as Record<string, unknown>) || undefined,
   };
 
   const openDetail = () => setIsRetailOpen(true);
@@ -132,6 +117,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
   return (
     <>
       <Card
+        data-testid={`product-card-${String(product.id)}`}
         data-card
         role="button"
         tabIndex={0}
@@ -240,6 +226,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
                   <Button
                     type="button"
                     onClick={handleAdd}
+                    data-testid={`add-to-cart-${String(product.id)}`}
+                    aria-label={`Adicionar ${product.name}`}
                     className={`
                       ${ctaHeight} w-full
                       rounded-3xl
@@ -268,6 +256,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
                     <button
                       type="button"
                       onClick={handleMinus}
+                      data-testid={`decrease-cart-${String(product.id)}`}
                       className="h-full w-12 sm:w-14 grid place-items-center hover:bg-gray-50 active:bg-gray-100"
                       aria-label="Diminuir"
                     >
@@ -283,6 +272,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
                     <button
                       type="button"
                       onClick={handlePlus}
+                      data-testid={`increase-cart-${String(product.id)}`}
                       className="h-full w-12 sm:w-14 grid place-items-center hover:bg-gray-50 active:bg-gray-100"
                       aria-label="Aumentar"
                     >
