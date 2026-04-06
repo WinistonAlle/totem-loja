@@ -196,8 +196,8 @@ function formatQtyForInput(q: number): string {
 // =====================
 function buildObsFromOrder(order: DbOrder): string {
   if (isTotemConsumerOrder(order)) {
-    const channel = parseTotemChannel(order) === "atacado" ? "Atacado" : "Varejo";
-    return `Cliente: ${getTotemCustomerName(order)} | Canal: Totem | Preço: ${channel}`;
+    const table = parseTotemChannel(order) === "atacado" ? "Atacado" : "Varejo";
+    return `Cliente: ${getTotemCustomerName(order)} | Tabela: ${table}`;
   }
 
   const spent = order.spent_from_balance_cents ?? 0;
