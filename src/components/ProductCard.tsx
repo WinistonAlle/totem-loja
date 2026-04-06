@@ -304,9 +304,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
             else addToCart(pricedProduct as any, safeQty);
 
             setIsRetailOpen(false);
-            toast.success("Adicionado ao carrinho", {
-              description: `${product.name} • ${safeQty}x`,
-            });
           }}
         />
       ) : null}

@@ -900,7 +900,7 @@ const Index: React.FC = () => {
                   </div>
                 ))}
 
-                <div className="grid grid-cols-[1.5fr_3.2fr_1.2fr] gap-2 sm:gap-3">
+                <div className="grid grid-cols-[1.5fr_3.2fr] gap-2 sm:gap-3">
                   <button
                     type="button"
                     data-testid="totem-name-backspace"
@@ -916,14 +916,6 @@ const Index: React.FC = () => {
                     className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[20px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[32px]"
                   >
                     Espaço
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="totem-name-hyphen"
-                    onClick={() => handleNameKeyPress("-")}
-                    className="h-[72px] rounded-[18px] border border-white/50 bg-white/92 text-[26px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[104px] sm:rounded-[24px] sm:text-[38px]"
-                  >
-                    -
                   </button>
                 </div>
               </div>
@@ -1524,7 +1516,7 @@ const Index: React.FC = () => {
                 </div>
               ))}
 
-              <div className="grid grid-cols-[1.4fr_2.8fr_1.2fr_1.4fr] gap-2 sm:gap-3">
+              <div className="grid grid-cols-[1.4fr_2.8fr_1.4fr] gap-2 sm:gap-3">
                 <button
                   type="button"
                   data-testid="catalog-search-backspace"
@@ -1546,14 +1538,6 @@ const Index: React.FC = () => {
                     <SpaceIcon className="h-5 w-5 sm:h-6 sm:w-6" />
                     Espaço
                   </span>
-                </button>
-                <button
-                  type="button"
-                  data-testid="catalog-search-zero"
-                  onClick={() => handleSearchKeyPress("0")}
-                  className="h-[58px] rounded-[18px] border border-white/50 bg-white text-[22px] font-extrabold text-[#6a1f1f] shadow-[0_10px_20px_rgba(0,0,0,0.08)] active:scale-[0.97] sm:h-[84px] sm:rounded-[22px] sm:text-[34px]"
-                >
-                  0
                 </button>
                 <button
                   type="button"
