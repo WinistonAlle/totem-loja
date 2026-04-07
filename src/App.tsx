@@ -226,7 +226,10 @@ function GlobalInactivityGuard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { clearCart, closeCart } = useCart();
-  const isDisabledRoute = ["/inicio", "/checkout"].includes(location.pathname);
+  const [sessionTick, setSessionTick] = useState(0);
+  const currentSession = getCustomerSession();
+  const isAdminSession = String(currentSession?.role ?? "").toLowerCase() === "admin";
+  const isDisabledRoute = ["/inicio", "/checkout"].includes(location.pathname) || isAdminSession;
 
   const INACTIVITY_LIMIT = 25000;
   const COUNTDOWN_SECONDS = 5;
@@ -236,6 +239,23 @@ function GlobalInactivityGuard() {
 
   const idleTimeoutRef = useRef<number | null>(null);
   const countdownIntervalRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "customer_session") setSessionTick((t) => t + 1);
+    };
+    window.addEventListener("storage", onStorage);
+
+    const onLocal = () => setSessionTick((t) => t + 1);
+    const unsubscribe = subscribeAppEvent(APP_EVENT.customerSessionChanged, onLocal);
+
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      unsubscribe();
+    };
+  }, []);
+
+  void sessionTick;
 
   const resetTotemSessionAndGoStart = () => {
     try {

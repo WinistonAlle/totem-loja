@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { Product } from "@/types/products";
+import { getChannelBasePrice } from "@/utils/productPricing";
+import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,14 +70,15 @@ const ROUTES = {
 -------------------------------------------------------- */
 const FALLBACK_IMG = "/placeholder.png";
 const STORAGE_BUCKET = "product-images";
+const CATALOG_PRODUCTS_CACHE_KEY = "gm_catalog_products_v4";
 
 /**
  * ✅ Regra didática:
  * 0..99 = "fixados no topo" (categoria "todas")
- * >= 1000 = ordem normal
+ * 999999 = ordem normal
  */
 const PINNED_MAX = 99;
-const DEFAULT_ORDER = 1000;
+const DEFAULT_ORDER = 999999;
 
 const CATEGORY_LABELS: Record<string, string> = {
   "1": "Pão de Queijo",
@@ -100,12 +103,16 @@ type Editable = Product & {
   price_cpf_varejo?: number;
   price_cnpj_atacado?: number;
   price_cnpj_varejo?: number;
+  price_atacado?: number;
+  price_varejo?: number;
 
   // inputs (aceita 3,5 / 3.5)
   price_cpf_atacado_input?: string;
   price_cpf_varejo_input?: string;
   price_cnpj_atacado_input?: string;
   price_cnpj_varejo_input?: string;
+  price_atacado_input?: string;
+  price_varejo_input?: string;
 
   // peso (tabela weight)
   weight_input?: string;
@@ -124,6 +131,12 @@ function parseBRNumber(v: any, fallback = 0): number {
   const normalized = s.replace(",", ".");
   const n = Number(normalized);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function pickUnifiedPrice(primary: any, secondary: any) {
+  const primaryNum = safeNumber(primary, NaN);
+  if (Number.isFinite(primaryNum)) return primaryNum;
+  return safeNumber(secondary, 0);
 }
 
 function safeNumberOrNull(v: any): number | null {
@@ -215,6 +228,14 @@ function mapRowToProduct(row: any): Product {
 function mapEditingToDbPayload(editing: Editable) {
   const firstImage =
     editing.images && editing.images.length > 0 ? editing.images[0].trim() : null;
+  const priceAtacado = parseBRNumber(
+    editing.price_atacado_input ?? editing.price_atacado ?? editing.price_cpf_atacado,
+    0
+  );
+  const priceVarejo = parseBRNumber(
+    editing.price_varejo_input ?? editing.price_varejo ?? editing.price_cpf_varejo,
+    0
+  );
 
   const payload: any = {
     id: editing.id,
@@ -236,22 +257,10 @@ function mapEditingToDbPayload(editing: Editable) {
     // ✅ ordem (nasce como 1000 por padrão, e "fixar no topo" usa 0..99)
     display_order: Math.max(0, Math.floor(safeNumber((editing as any).display_order, DEFAULT_ORDER))),
 
-    price_cpf_atacado: parseBRNumber(
-      editing.price_cpf_atacado_input ?? editing.price_cpf_atacado,
-      0
-    ),
-    price_cpf_varejo: parseBRNumber(
-      editing.price_cpf_varejo_input ?? editing.price_cpf_varejo,
-      0
-    ),
-    price_cnpj_atacado: parseBRNumber(
-      editing.price_cnpj_atacado_input ?? editing.price_cnpj_atacado,
-      0
-    ),
-    price_cnpj_varejo: parseBRNumber(
-      editing.price_cnpj_varejo_input ?? editing.price_cnpj_varejo,
-      0
-    ),
+    price_cpf_atacado: priceAtacado,
+    price_cpf_varejo: priceVarejo,
+    price_cnpj_atacado: priceAtacado,
+    price_cnpj_varejo: priceVarejo,
   };
 
   return payload;
@@ -287,7 +296,13 @@ function formatMoneyBR(v: number) {
 }
 
 function getDisplayPrice(p: any) {
-  return safeNumber(p?.price_cpf_varejo ?? 0, 0);
+  return getChannelBasePrice(p, "varejo");
+}
+
+function getCatalogPositionLabel(p: any) {
+  const order = getOrder(p);
+  if (isPinned(p)) return `Topo #${order + 1}`;
+  return "Ordem normal";
 }
 
 function getOrder(p: any) {
@@ -298,6 +313,13 @@ function getOrder(p: any) {
 function isPinned(p: any) {
   const o = getOrder(p);
   return o >= 0 && o <= PINNED_MAX;
+}
+
+function invalidateCatalogProductsCache() {
+  try {
+    localStorage.removeItem(CATALOG_PRODUCTS_CACHE_KEY);
+  } catch {}
+  emitAppEvent(APP_EVENT.catalogProductsChanged);
 }
 
 /* --------------------------------------------------------
@@ -466,6 +488,27 @@ export default function Admin() {
     return pins;
   }, [items]);
 
+  async function unpinAllProducts() {
+    if (!pinnedSorted.length) return;
+
+    const previous = items;
+    setItems((prev) => prev.map((p) => ({ ...p, display_order: isPinned(p as any) ? DEFAULT_ORDER : getOrder(p as any) } as any)));
+
+    const { error } = await supabase
+      .from("products")
+      .update({ display_order: DEFAULT_ORDER })
+      .lte("display_order", PINNED_MAX);
+
+    if (error) {
+      console.error("Erro ao desafixar todos:", error);
+      setItems(previous);
+      setLoadError(error.message || "Erro ao limpar os fixados do topo.");
+      return;
+    }
+
+    invalidateCatalogProductsCache();
+  }
+
   async function persistDisplayOrder(productId: string, newOrder: number) {
     // otimista
     setItems((prev) =>
@@ -490,7 +533,10 @@ export default function Admin() {
           .order("name", { ascending: true });
         if (!pErr) setItems((data ?? []).map(mapRowToProduct) as Product[]);
       } catch {}
+      return;
     }
+
+    invalidateCatalogProductsCache();
   }
 
   async function pinToTop(p: Product) {
@@ -567,10 +613,14 @@ export default function Admin() {
       price_cpf_varejo: 0,
       price_cnpj_atacado: 0,
       price_cnpj_varejo: 0,
+      price_atacado: 0,
+      price_varejo: 0,
       price_cpf_atacado_input: "",
       price_cpf_varejo_input: "",
       price_cnpj_atacado_input: "",
       price_cnpj_varejo_input: "",
+      price_atacado_input: "",
+      price_varejo_input: "",
     });
     setOpenForm(true);
   };
@@ -584,6 +634,8 @@ export default function Admin() {
     const cpfVa = safeNumber(anyP.price_cpf_varejo, 0);
     const cnpjAt = safeNumber(anyP.price_cnpj_atacado, 0);
     const cnpjVa = safeNumber(anyP.price_cnpj_varejo, 0);
+    const unifiedAt = pickUnifiedPrice(anyP.price_cpf_atacado, anyP.price_cnpj_atacado);
+    const unifiedVa = pickUnifiedPrice(anyP.price_cpf_varejo, anyP.price_cnpj_varejo);
 
     setEditing({
       ...(p as Editable),
@@ -600,11 +652,15 @@ export default function Admin() {
       price_cpf_varejo: cpfVa,
       price_cnpj_atacado: cnpjAt,
       price_cnpj_varejo: cnpjVa,
+      price_atacado: unifiedAt,
+      price_varejo: unifiedVa,
 
       price_cpf_atacado_input: String(cpfAt).replace(".", ","),
       price_cpf_varejo_input: String(cpfVa).replace(".", ","),
       price_cnpj_atacado_input: String(cnpjAt).replace(".", ","),
       price_cnpj_varejo_input: String(cnpjVa).replace(".", ","),
+      price_atacado_input: String(unifiedAt).replace(".", ","),
+      price_varejo_input: String(unifiedVa).replace(".", ","),
     });
     setOpenForm(true);
   };
@@ -782,6 +838,7 @@ export default function Admin() {
         const next = idx >= 0 ? prev.map((p, i) => (i === idx ? saved : p)) : [saved, ...prev];
         return next;
       });
+      invalidateCatalogProductsCache();
 
       closeForm();
     } catch (err: any) {
@@ -810,6 +867,7 @@ export default function Admin() {
       if (error) throw error;
 
       setItems((prev) => prev.filter((p) => p.id !== toDelete.id));
+      invalidateCatalogProductsCache();
       setToDelete(null);
     } catch (err) {
       console.error("Erro ao excluir produto:", err);
@@ -1001,6 +1059,16 @@ export default function Admin() {
                       </>
                     )}
                   </div>
+
+                  {canPinHere && pinnedCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={unpinAllProducts}
+                      className="mt-3 w-full h-10 rounded-2xl border border-red-200 bg-red-50 text-red-700 font-extrabold hover:bg-red-100 active:scale-[0.99]"
+                    >
+                      Desafixar todos
+                    </button>
+                  )}
                 </div>
 
                 <button
@@ -1123,6 +1191,13 @@ export default function Admin() {
                               {p.packageInfo ? ` • ${p.packageInfo}` : ""}
                               {w ? ` • ${w}kg` : ""}
                               {showTopControls ? ` • ordem: ${order}` : ""}
+                            </div>
+
+                            <div className="mt-2 text-[12px] font-semibold text-gray-700">
+                              Posição no catálogo:{" "}
+                              <span className="font-extrabold text-gray-900">
+                                {getCatalogPositionLabel(anyP)}
+                              </span>
                             </div>
 
                             {/* ✅ TOP CONTROLS DIDÁTICOS */}
@@ -1312,67 +1387,72 @@ export default function Admin() {
                   </Select>
                 </Field>
 
-                {/* 4 preços */}
+                {/* 2 preços */}
                 <div className="rounded-[24px] border border-gray-200 bg-white p-3">
-                  <div className="text-[13px] font-extrabold text-gray-900">Preços (4 tabelas)</div>
+                  <div className="text-[13px] font-extrabold text-gray-900">Preços por tabela</div>
                   <div className="text-[11px] text-gray-500 font-semibold mt-1">
-                    CPF/CNPJ × Atacado/Varejo
+                    Defina só atacado e varejo. O mesmo valor será salvo para CPF e CNPJ.
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Field label="CPF • Atacado (R$)">
+                    <Field label="Atacado (R$)">
                       <Input
                         className="h-12 rounded-2xl"
                         type="text"
                         inputMode="decimal"
-                        value={editing.price_cpf_atacado_input ?? ""}
+                        value={editing.price_atacado_input ?? ""}
                         onChange={(e) =>
-                          setEditing({ ...editing, price_cpf_atacado_input: e.target.value })
+                          setEditing({ ...editing, price_atacado_input: e.target.value })
                         }
                         placeholder="Ex.: 48,50"
                       />
                     </Field>
 
-                    <Field label="CPF • Varejo (R$)">
+                    <Field label="Varejo (R$)">
                       <Input
                         className="h-12 rounded-2xl"
                         type="text"
                         inputMode="decimal"
-                        value={editing.price_cpf_varejo_input ?? ""}
+                        value={editing.price_varejo_input ?? ""}
                         onChange={(e) =>
-                          setEditing({ ...editing, price_cpf_varejo_input: e.target.value })
-                        }
-                        placeholder="Ex.: 55,90"
-                      />
-                    </Field>
-
-                    <Field label="CNPJ • Atacado (R$)">
-                      <Input
-                        className="h-12 rounded-2xl"
-                        type="text"
-                        inputMode="decimal"
-                        value={editing.price_cnpj_atacado_input ?? ""}
-                        onChange={(e) =>
-                          setEditing({ ...editing, price_cnpj_atacado_input: e.target.value })
-                        }
-                        placeholder="Ex.: 45,00"
-                      />
-                    </Field>
-
-                    <Field label="CNPJ • Varejo (R$)">
-                      <Input
-                        className="h-12 rounded-2xl"
-                        type="text"
-                        inputMode="decimal"
-                        value={editing.price_cnpj_varejo_input ?? ""}
-                        onChange={(e) =>
-                          setEditing({ ...editing, price_cnpj_varejo_input: e.target.value })
+                          setEditing({ ...editing, price_varejo_input: e.target.value })
                         }
                         placeholder="Ex.: 52,90"
                       />
                     </Field>
                   </div>
                 </div>
+
+                {editing && (
+                  <div className="rounded-[24px] border border-emerald-200 bg-emerald-50 p-3">
+                    <div className="text-[13px] font-extrabold text-emerald-950">
+                      Como o preço é exibido no catálogo
+                    </div>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px] font-semibold text-emerald-950">
+                      <div className="rounded-2xl bg-white/70 border border-emerald-100 p-3">
+                        <div className="text-[11px] text-emerald-700">Atacado</div>
+                        <div className="mt-1">{formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0))}/kg</div>
+                        <div className="text-emerald-700 mt-1">
+                          Peso: {parseBRNumber(editing.weight_input ?? editing.weight, 0).toLocaleString("pt-BR")}kg
+                        </div>
+                        <div className="mt-1 font-extrabold">
+                          Final: {formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0) * parseBRNumber(editing.weight_input ?? editing.weight, 0))}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-white/70 border border-emerald-100 p-3">
+                        <div className="text-[11px] text-emerald-700">Varejo</div>
+                        <div className="mt-1">{formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0))}/kg</div>
+                        <div className="text-emerald-700 mt-1">
+                          Peso: {parseBRNumber(editing.weight_input ?? editing.weight, 0).toLocaleString("pt-BR")}kg
+                        </div>
+                        <div className="mt-1 font-extrabold">
+                          Final: {formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0) * parseBRNumber(editing.weight_input ?? editing.weight, 0))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Field label="Package info">

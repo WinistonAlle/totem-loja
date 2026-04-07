@@ -25,6 +25,7 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Bell,
   Package,
   LogOut,
@@ -51,8 +52,9 @@ const CATEGORY_NAME_BY_ID: Record<number, string> = {
 };
 
 const ITEMS_PER_PAGE = 24;
-const PRODUCTS_CACHE_KEY = "gm_catalog_products_v2";
+const PRODUCTS_CACHE_KEY = "gm_catalog_products_v4";
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_CATALOG_DISPLAY_ORDER = 999999;
 const TOTEM_NAME_KEYBOARD_ROWS = [
   ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
@@ -106,6 +108,19 @@ function toBool(value: unknown): boolean {
   return false;
 }
 
+function getCatalogDisplayOrder(product: any): number {
+  const value = toNumber(product?.display_order, DEFAULT_CATALOG_DISPLAY_ORDER);
+  return Number.isFinite(value) ? value : DEFAULT_CATALOG_DISPLAY_ORDER;
+}
+
+function sortCatalogProducts<T extends Record<string, any>>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const orderDiff = getCatalogDisplayOrder(a) - getCatalogDisplayOrder(b);
+    if (orderDiff !== 0) return orderDiff;
+    return String(a?.name ?? "").localeCompare(String(b?.name ?? ""), "pt-BR");
+  });
+}
+
 function isMissingRelation(err: any) {
   const msg = String(err?.message ?? "");
   return (
@@ -135,6 +150,21 @@ function pickDisplayName(session: any): string {
   const raw = candidates[0] || "Cliente";
   const first = raw.split(/\s+/).filter(Boolean)[0] || raw;
   return first.charAt(0).toUpperCase() + first.slice(1);
+}
+
+function scrollCatalogToTop() {
+  const targets = [
+    document.scrollingElement,
+    document.documentElement,
+    document.body,
+    window,
+  ].filter(Boolean) as Array<Element | Window>;
+
+  targets.forEach((target) => {
+    if ("scrollTo" in target) {
+      target.scrollTo({ top: 0, left: 0, behavior: "smooth" });
+    }
+  });
 }
 
 function getChannelLabel(channel: ChannelType | null | undefined): string {
@@ -200,6 +230,7 @@ const Index: React.FC = () => {
 
   const [sessionTick, setSessionTick] = useState(0);
   const [pricingTick, setPricingTick] = useState(0);
+  const [productsRefreshTick, setProductsRefreshTick] = useState(0);
 
   // ✅ Mobile bottom-sheet (categorias + menu)
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -208,6 +239,7 @@ const Index: React.FC = () => {
   const [totemCustomerName, setTotemCustomerName] = useState("");
   const [nameModalError, setNameModalError] = useState("");
   const [searchKeyboardOpen, setSearchKeyboardOpen] = useState(false);
+  const [showScrollTopHint, setShowScrollTopHint] = useState(false);
 
   // ✅ trava scroll do body quando o sheet abrir (mobile fica “no lugar”)
   useEffect(() => {
@@ -243,6 +275,7 @@ const Index: React.FC = () => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "customer_session") setSessionTick((t) => t + 1);
       if (e.key === "pricing_context") setPricingTick((t) => t + 1);
+      if (e.key === PRODUCTS_CACHE_KEY) setProductsRefreshTick((t) => t + 1);
     };
     window.addEventListener("storage", onStorage);
 
@@ -251,11 +284,14 @@ const Index: React.FC = () => {
 
     const onPricing = () => setPricingTick((t) => t + 1);
     const unsubscribePricing = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
+    const onProductsChanged = () => setProductsRefreshTick((t) => t + 1);
+    const unsubscribeProducts = subscribeAppEvent(APP_EVENT.catalogProductsChanged, onProductsChanged);
 
     return () => {
       window.removeEventListener("storage", onStorage);
       unsubscribeSession();
       unsubscribePricing();
+      unsubscribeProducts();
     };
   }, []);
 
@@ -304,7 +340,7 @@ const Index: React.FC = () => {
   useEffect(() => {
     if (!hasPricingContext()) navigate(ROUTES.contextoCompra, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [productsRefreshTick]);
 
   useEffect(() => {
     if (!hasPricingContext()) return;
@@ -603,6 +639,7 @@ const Index: React.FC = () => {
       id: String(row.id),
       old_id: row.old_id ?? null,
       name: row.name ?? "",
+      display_order: toNumber(row.display_order, DEFAULT_CATALOG_DISPLAY_ORDER),
       price: varejoBasePrice,
       employee_price: atacadoBasePrice,
       images,
@@ -641,7 +678,7 @@ const Index: React.FC = () => {
         const isFresh = now - cachedAt <= PRODUCTS_CACHE_TTL_MS;
 
         if (Array.isArray(cacheItems) && cacheItems.length > 0 && isFresh) {
-          setProducts(cacheItems);
+          setProducts(sortCatalogProducts(cacheItems as Product[]));
           setLoading(false);
           cacheServed = true;
           void recordSystemEvent({
@@ -665,9 +702,11 @@ const Index: React.FC = () => {
       try {
         setLoading(true);
 
-        const { data, error } = await supabase.from("products").select("*").order("name", {
-          ascending: true,
-        });
+        const { data, error } = await supabase
+          .from("products")
+          .select("*")
+          .order("display_order", { ascending: true })
+          .order("name", { ascending: true });
 
         if (!mounted) return;
 
@@ -691,7 +730,7 @@ const Index: React.FC = () => {
           return;
         }
 
-        const mapped: Product[] = ((data as any[]) ?? []).map(mapRowToProduct);
+        const mapped: Product[] = sortCatalogProducts(((data as any[]) ?? []).map(mapRowToProduct));
         setProducts(mapped);
         setLoadError(null);
         void recordSystemEvent({
@@ -780,11 +819,21 @@ const Index: React.FC = () => {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
+  useEffect(() => {
+    const updateScrollHint = () => {
+      setShowScrollTopHint(window.scrollY > 240);
+    };
+
+    updateScrollHint();
+    window.addEventListener("scroll", updateScrollHint, { passive: true });
+    return () => window.removeEventListener("scroll", updateScrollHint);
+  }, []);
+
   const changePage = (nextPage: number) => {
     const p = Math.max(1, Math.min(totalPages, nextPage));
     setCurrentPage(p);
-    requestAnimationFrame(() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" }));
-    setTimeout(() => window.scrollTo({ top: 0, left: 0, behavior: "smooth" }), 0);
+    requestAnimationFrame(scrollCatalogToTop);
+    setTimeout(scrollCatalogToTop, 0);
   };
 
   /* UI helpers */
@@ -1261,11 +1310,13 @@ const Index: React.FC = () => {
                       </button>
 
                       <button
-                        className="h-11 sm:h-10 px-4 rounded-2xl border border-gray-200 bg-gray-100 hover:bg-gray-200 font-extrabold justify-self-center active:scale-[0.99]"
-                        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                        className="h-11 sm:h-10 px-4 rounded-2xl border border-gray-200 bg-gray-100 hover:bg-gray-200 font-extrabold justify-self-center active:scale-[0.99] inline-flex items-center gap-2"
+                        onClick={scrollCatalogToTop}
                         type="button"
+                        aria-label="Voltar ao topo do catálogo"
                       >
-                        Voltar ao topo
+                        <ChevronUp className="h-4 w-4" />
+                        {showScrollTopHint ? "Subir no catálogo" : "Ir para o topo"}
                       </button>
 
                       <button

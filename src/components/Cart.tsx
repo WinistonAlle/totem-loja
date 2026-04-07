@@ -4,6 +4,9 @@ import { X, Minus, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
 import { Button } from "./ui/button";
+import { toast } from "./ui/sonner";
+import { getPricingChannel, updatePricingChannel } from "@/utils/pricingContext";
+import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 function getLinePrice(item: any) {
   const p = item?.product ?? {};
@@ -14,9 +17,13 @@ function getLinePrice(item: any) {
 
 const Cart: React.FC = () => {
   const navigate = useNavigate();
-  const { cartItems, addToCart, decreaseQuantity, removeFromCart, isCartOpen, openCart, closeCart } =
+  const { cartItems, totalWeight, addToCart, decreaseQuantity, removeFromCart, isCartOpen, openCart, closeCart } =
     useCart() as any;
   const [enter, setEnter] = useState(false);
+  const [showWholesaleBlockCard, setShowWholesaleBlockCard] = useState(false);
+  const pricingChannel = getPricingChannel();
+  const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
+  const canProceedToCheckout = pricingChannel !== "atacado" || wholesaleUnlocked;
 
   useEffect(() => {
     const onOpen = () => openCart();
@@ -27,11 +34,18 @@ const Cart: React.FC = () => {
   useEffect(() => {
     if (!isCartOpen) {
       setEnter(false);
+      setShowWholesaleBlockCard(false);
       return;
     }
     const raf = requestAnimationFrame(() => setEnter(true));
     return () => cancelAnimationFrame(raf);
   }, [isCartOpen]);
+
+  useEffect(() => {
+    if (canProceedToCheckout && showWholesaleBlockCard) {
+      setShowWholesaleBlockCard(false);
+    }
+  }, [canProceedToCheckout, showWholesaleBlockCard]);
 
   const total = useMemo(
     () => (cartItems ?? []).reduce((acc: number, it: any) => acc + getLinePrice(it), 0),
@@ -39,6 +53,24 @@ const Cart: React.FC = () => {
   );
 
   const close = () => closeCart();
+
+  const handleProceedToCheckout = () => {
+    if (!canProceedToCheckout) {
+      setShowWholesaleBlockCard(true);
+      return;
+    }
+
+    close();
+    navigate("/checkout");
+  };
+
+  const handleSwitchToRetailCheckout = () => {
+    updatePricingChannel("varejo");
+    setShowWholesaleBlockCard(false);
+    toast.success("Tabela alterada para varejo", {
+      description: "Agora você pode continuar para o checkout.",
+    });
+  };
 
   if (!isCartOpen) return null;
 
@@ -50,6 +82,65 @@ const Cart: React.FC = () => {
         }`}
         onClick={close}
       />
+
+      {showWholesaleBlockCard && !canProceedToCheckout && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center px-5 sm:px-8">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/30 backdrop-blur-[3px]"
+            aria-label="Fechar aviso"
+            onClick={() => setShowWholesaleBlockCard(false)}
+          />
+
+          <div className="relative w-full max-w-[620px] rounded-[32px] border border-white/70 bg-[linear-gradient(180deg,rgba(255,248,248,0.98)_0%,rgba(255,255,255,0.98)_100%)] px-6 py-6 sm:px-8 sm:py-8 shadow-[0_30px_90px_rgba(0,0,0,0.18)] text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#fff0f1] border border-[#f4c8cb]">
+              <span className="text-[22px]">!</span>
+            </div>
+
+            <div className="text-[11px] sm:text-[12px] font-extrabold tracking-[0.18em] text-[#9e0f14] uppercase">
+              Checkout bloqueado
+            </div>
+
+            <div className="mt-3 text-[24px] sm:text-[34px] leading-tight font-extrabold text-gray-950">
+              Faltam{" "}
+              {Math.max(WHOLESALE_WEIGHT_THRESHOLD_KG - Number(totalWeight ?? 0), 0)
+                .toFixed(1)
+                .replace(".", ",")}
+              kg para liberar o atacado
+            </div>
+
+            <div className="mt-3 text-[14px] sm:text-[17px] font-semibold text-gray-600">
+              Você pode voltar ao catálogo para adicionar mais itens ou continuar agora com preço de varejo.
+            </div>
+
+            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-13 sm:h-14 rounded-2xl border-gray-300 bg-white/90 text-[14px] sm:text-[15px] font-extrabold text-gray-900 hover:bg-white"
+                onClick={close}
+              >
+                Voltar ao catálogo
+              </Button>
+              <Button
+                type="button"
+                className="h-13 sm:h-14 rounded-2xl bg-black text-[14px] sm:text-[15px] font-extrabold text-white hover:bg-gray-900"
+                onClick={handleSwitchToRetailCheckout}
+              >
+                Continuar com varejo
+              </Button>
+            </div>
+
+            <button
+              type="button"
+              className="mt-4 text-[12px] sm:text-[13px] font-semibold text-gray-500 hover:text-gray-700"
+              onClick={() => setShowWholesaleBlockCard(false)}
+            >
+              Fechar aviso
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom sheet (MOBILE: quase full / TOTEM: mantém 56dvh) */}
       <div
@@ -269,17 +360,18 @@ const Cart: React.FC = () => {
             <Button
               data-testid="cart-finalize"
               className="h-12 sm:h-16 rounded-2xl sm:rounded-3xl px-6 sm:px-9 font-extrabold text-[14px] sm:text-[18px] bg-black text-white hover:bg-gray-900 flex-1"
-              onClick={() => {
-                close();
-                navigate("/checkout");
-              }}
+              onClick={handleProceedToCheckout}
             >
               Finalizar
             </Button>
           </div>
 
-          <div className="mt-2 sm:hidden text-[12px] text-gray-500 font-semibold">
-            Você finaliza com a atendente na próxima tela
+          <div className="mt-2 sm:hidden text-[12px] font-semibold text-gray-500">
+            {canProceedToCheckout
+              ? "Você finaliza com a atendente na próxima tela"
+              : showWholesaleBlockCard
+              ? "Escolha voltar ao catálogo ou continuar com varejo"
+              : "Você finaliza com a atendente na próxima tela"}
           </div>
         </div>
       </div>

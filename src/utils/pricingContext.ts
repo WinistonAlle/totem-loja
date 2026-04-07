@@ -86,6 +86,34 @@ export function updatePricingContextCustomerName(name: string) {
   } catch {}
 }
 
+export function updatePricingChannel(channel: ChannelType) {
+  const storage = getStorage();
+  if (!storage) return;
+
+  try {
+    const raw = storage.getItem(PRICING_CONTEXT_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const customerType: CustomerType =
+      channel === "atacado"
+        ? parsed?.customer_type === "cnpj"
+          ? "cnpj"
+          : "cpf"
+        : "cpf";
+
+    storage.setItem(
+      PRICING_CONTEXT_KEY,
+      JSON.stringify({
+        ...parsed,
+        channel,
+        customer_type: customerType,
+        price_table: `${channel.toUpperCase()}_${customerType.toUpperCase()}`,
+      })
+    );
+    emitAppEvent(APP_EVENT.pricingContextChanged);
+  } catch {}
+}
+
 /**
  * Retorna o preço correto do produto baseado no contexto salvo no ContextoCompra.
  * Padrão: CPF + VAREJO (se não tiver contexto)

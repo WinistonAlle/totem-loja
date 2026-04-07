@@ -136,6 +136,18 @@ const Checkout: React.FC = () => {
   }, [navigate]);
 
   useEffect(() => {
+    const pricingChannel = getPricingChannel();
+    const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
+
+    if (pricingChannel === "atacado" && !wholesaleUnlocked) {
+      toast.error("Atacado indisponível para este pedido", {
+        description: `O checkout no atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`,
+      });
+      navigate("/catalogo", { replace: true });
+    }
+  }, [navigate, totalWeight]);
+
+  useEffect(() => {
     const nextName = getPricingContext()?.customer_name ?? "";
     setCustomerName((current) => (current === nextName ? current : nextName));
   }, []);

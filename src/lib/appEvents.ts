@@ -1,6 +1,7 @@
 export const APP_EVENT = {
   customerSessionChanged: "customer_session_changed",
   pricingContextChanged: "pricing_context_changed",
+  catalogProductsChanged: "catalog_products_changed",
 } as const;
 
 type AppEventName = (typeof APP_EVENT)[keyof typeof APP_EVENT];
