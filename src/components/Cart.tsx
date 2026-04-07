@@ -17,7 +17,7 @@ function getLinePrice(item: any) {
 
 const Cart: React.FC = () => {
   const navigate = useNavigate();
-  const { cartItems, totalWeight, addToCart, decreaseQuantity, removeFromCart, isCartOpen, openCart, closeCart } =
+  const { cartItems, totalWeight, addToCart, decreaseQuantity, removeFromCart, repriceCartFromPricingContext, isCartOpen, openCart, closeCart } =
     useCart() as any;
   const [enter, setEnter] = useState(false);
   const [showWholesaleBlockCard, setShowWholesaleBlockCard] = useState(false);
@@ -66,10 +66,13 @@ const Cart: React.FC = () => {
 
   const handleSwitchToRetailCheckout = () => {
     updatePricingChannel("varejo");
+    repriceCartFromPricingContext?.();
     setShowWholesaleBlockCard(false);
     toast.success("Tabela alterada para varejo", {
       description: "Agora você pode continuar para o checkout.",
     });
+    close();
+    navigate("/checkout");
   };
 
   if (!isCartOpen) return null;
