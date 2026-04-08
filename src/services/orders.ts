@@ -1,6 +1,7 @@
 // src/services/orders.ts
 import { supabase } from "@/lib/supabase";
 import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
+import { getPricingContext } from "@/utils/pricingContext";
 import { recordSystemEvent } from "@/lib/systemEvents";
 import { WHOLESALE_WEIGHT_THRESHOLD_KG, getOrderTotalWeightKg, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
@@ -31,6 +32,7 @@ type ProductRow = {
   name?: string | null;
   price?: number | string | null;
   employee_price?: number | string | null;
+  weight?: number | string | null;
   price_cpf_varejo?: number | string | null;
   price_cpf_atacado?: number | string | null;
   price_cnpj_varejo?: number | string | null;
@@ -91,6 +93,16 @@ function isMissingRpcError(error: any): boolean {
   return code === "PGRST202" || message.includes("create_order_v1") || details.includes("create_order_v1");
 }
 
+function isPriceMismatchError(error: any): boolean {
+  const message = String(error?.message ?? "").toLowerCase();
+  const details = String(error?.details ?? "").toLowerCase();
+
+  return (
+    message.includes("os preços do carrinho foram atualizados") ||
+    details.includes("os preços do carrinho foram atualizados")
+  );
+}
+
 function parsePositiveQuantity(quantity: number): number {
   const parsed = Math.floor(Number(quantity));
   if (!Number.isFinite(parsed) || parsed <= 0) {
@@ -104,11 +116,24 @@ function inferPricingChannel(paymentMethod: string): ChannelType {
   return paymentMethod.toLowerCase().includes("atacado") ? "atacado" : "varejo";
 }
 
-function getAuthoritativeUnitPriceCents(product: ProductRow, channel: ChannelType): number {
-  const chosen = resolveProductPrice(product, {
+function getAuthoritativePricingContext(channel: ChannelType) {
+  const ctx = getPricingContext();
+  if (ctx?.channel === channel) {
+    return {
+      customer_type: ctx.customer_type,
+      channel: ctx.channel,
+    };
+  }
+
+  return {
     customer_type: channel === "atacado" ? "cnpj" : "cpf",
     channel,
-  }) || getChannelBasePrice(product, channel);
+  } as const;
+}
+
+function getAuthoritativeUnitPriceCents(product: ProductRow, channel: ChannelType): number {
+  const pricingContext = getAuthoritativePricingContext(channel);
+  const chosen = resolveProductPrice(product, pricingContext) || getChannelBasePrice(product, channel);
   const cents = toCents(chosen);
 
   if (cents <= 0) {
@@ -127,7 +152,7 @@ async function loadAuthoritativeProducts(productIds: string[]): Promise<Map<stri
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id, old_id, name, price, employee_price, price_cpf_varejo, price_cpf_atacado, price_cnpj_varejo, price_cnpj_atacado"
+      "id, old_id, name, price, employee_price, weight, price_cpf_varejo, price_cpf_atacado, price_cnpj_varejo, price_cnpj_atacado"
     )
     .in("id", uniqueIds);
 
@@ -270,6 +295,18 @@ async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrde
       if (REQUIRE_ORDER_RPC) {
         throw new Error("A RPC create_order_v1 é obrigatória, mas não está disponível neste ambiente.");
       }
+      return null;
+    }
+    if (isPriceMismatchError(error)) {
+      await recordOrderEventSafe({
+        eventName: "order_rpc_price_mismatch_fallback",
+        severity: "warning",
+        message: "RPC rejeitou o pedido por divergencia de preco; usando fallback cliente.",
+        payload: {
+          paymentMethod,
+          items: payloadItems.length,
+        },
+      });
       return null;
     }
     throw error;
