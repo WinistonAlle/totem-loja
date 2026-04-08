@@ -31,9 +31,9 @@ const TARGET_ORDER_ID = process.env.ORDER_ID ? String(process.env.ORDER_ID) : nu
 const SAIBWEB_TOTEM_CUSTOMER_DOCUMENT =
   process.env.SAIBWEB_TOTEM_CUSTOMER_DOCUMENT?.trim() || "00000000000";
 const SAIBWEB_CUSTOMER_NAME = process.env.SAIBWEB_CUSTOMER_NAME?.trim() || "CONSUMIDOR";
-const SAIBWEB_PRICE_TABLE_VAREJO = process.env.SAIBWEB_PRICE_TABLE_VAREJO?.trim() || "18";
+const SAIBWEB_PRICE_TABLE_VAREJO = process.env.SAIBWEB_PRICE_TABLE_VAREJO?.trim() || "2";
 const SAIBWEB_PRICE_TABLE_ATACADO =
-  process.env.SAIBWEB_PRICE_TABLE_ATACADO?.trim() || SAIBWEB_PRICE_TABLE_VAREJO;
+  process.env.SAIBWEB_PRICE_TABLE_ATACADO?.trim() || "6";
 
 // =====================
 // ENV - SUPABASE
