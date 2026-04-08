@@ -27,7 +27,7 @@ function pickFirstPositive(product: any, keys: string[]): number | null {
 
 function getWeightMultiplier(product: any): number {
   const weight = toNumber(product?.weight ?? product?.weight_kg ?? product?.weightKg);
-  if (weight != null && weight > 0) return weight;
+  if (weight != null && weight > 1) return weight;
   return 1;
 }
 
