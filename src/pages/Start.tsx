@@ -617,7 +617,7 @@ export default function Start() {
         role: "admin",
       });
       setAdminOpen(false);
-      navigate("/catalogo", { replace: true });
+      navigate("/admin", { replace: true });
     } catch (error: any) {
       setAdminError(error?.message || "Não foi possível validar o acesso.");
     } finally {

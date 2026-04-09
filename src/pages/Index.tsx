@@ -338,16 +338,22 @@ const Index: React.FC = () => {
   const handleLogout = () => resetTotemSessionAndGoStart();
 
   useEffect(() => {
+    if (isAdmin) return;
     if (!hasPricingContext()) navigate(ROUTES.contextoCompra, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productsRefreshTick]);
+  }, [isAdmin, productsRefreshTick]);
 
   useEffect(() => {
+    if (isAdmin) {
+      setNameModalOpen(false);
+      setNameModalError("");
+      return;
+    }
     if (!hasPricingContext()) return;
     const savedName = getPricingContextCustomerName();
     setTotemCustomerName(savedName);
     setNameModalOpen(!savedName);
-  }, [pricingTick]);
+  }, [isAdmin, pricingTick]);
 
   const handleConfirmTotemName = () => {
     const trimmed = totemCustomerName.trim();

@@ -5,6 +5,7 @@ import styled from "styled-components";
 import { Bg } from "@/components/ui/app-surface";
 import logo from "@/images/logoc.png";
 import { ArrowLeft } from "lucide-react";
+import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
 
 /* ================= TYPES ================= */
 
@@ -149,6 +150,8 @@ const OptionBtn = styled.button`
 
 export default function ContextoCompra() {
   const navigate = useNavigate();
+  const session = getCustomerSessionSnapshotOrNull();
+  const isAdmin = String(session?.role ?? "").toLowerCase() === "admin";
 
   // ✅ trava scroll do documento inteiro (iOS/Android/Safari)
   useEffect(() => {
@@ -178,6 +181,12 @@ export default function ContextoCompra() {
       (body.style as any).touchAction = prevBodyTouchAction;
     };
   }, []);
+
+  useEffect(() => {
+    if (isAdmin) {
+      navigate("/admin", { replace: true });
+    }
+  }, [isAdmin, navigate]);
 
   function handleChannel(channel: ChannelType) {
     const customerType = channel === "atacado" ? "cnpj" : "cpf";
