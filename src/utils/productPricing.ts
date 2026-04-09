@@ -7,6 +7,17 @@ export type PricingContextLike = {
   price_table?: string | null;
 } | null;
 
+function toBool(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "sim", "yes"].includes(normalized)) return true;
+    if (["false", "0", "nao", "não", "no"].includes(normalized)) return false;
+  }
+  return false;
+}
+
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -15,6 +26,10 @@ function toNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+export function isPackageProduct(product: any): boolean {
+  return toBool(product?.isPackage ?? product?.is_package ?? product?.is_pkg);
 }
 
 function pickFirstPositive(product: any, keys: string[]): number | null {
@@ -26,6 +41,8 @@ function pickFirstPositive(product: any, keys: string[]): number | null {
 }
 
 function getWeightMultiplier(product: any): number {
+  if (isPackageProduct(product)) return 1;
+
   const weight = toNumber(product?.weight ?? product?.weight_kg ?? product?.weightKg);
   if (weight != null && weight > 1) return weight;
   return 1;

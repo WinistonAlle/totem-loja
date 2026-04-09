@@ -33,6 +33,7 @@ type ProductRow = {
   price?: number | string | null;
   employee_price?: number | string | null;
   weight?: number | string | null;
+  is_package?: boolean | string | number | null;
   price_cpf_varejo?: number | string | null;
   price_cpf_atacado?: number | string | null;
   price_cnpj_varejo?: number | string | null;
@@ -152,7 +153,7 @@ async function loadAuthoritativeProducts(productIds: string[]): Promise<Map<stri
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id, old_id, name, price, employee_price, weight, price_cpf_varejo, price_cpf_atacado, price_cnpj_varejo, price_cnpj_atacado"
+      "id, old_id, name, price, employee_price, weight, is_package, price_cpf_varejo, price_cpf_atacado, price_cnpj_varejo, price_cnpj_atacado"
     )
     .in("id", uniqueIds);
 
