@@ -925,7 +925,7 @@ const Login: React.FC = () => {
       localStorage.setItem("customer_session", JSON.stringify(sessionToSave));
       window.dispatchEvent(new Event("customer_session_changed"));
 
-      navigate("/catalogo", { replace: true });
+      navigate(customer.role === "admin" ? "/admin" : "/catalogo", { replace: true });
     } catch (error: any) {
       setErr(error?.message || "Erro inesperado. Tente novamente.");
     } finally {

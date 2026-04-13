@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
 import type { Product } from "@/types/products";
-import { getChannelBasePrice } from "@/utils/productPricing";
+import { getChannelBasePrice, isPackageProduct } from "@/utils/productPricing";
 import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 
 import { Input } from "@/components/ui/input";
@@ -150,12 +150,6 @@ function safeNumber(v: any, fallback = 0): number {
   return parseBRNumber(v, fallback);
 }
 
-function getCatalogPreviewPrice(price: any, weight: any): number {
-  const basePrice = parseBRNumber(price, 0);
-  const weightKg = parseBRNumber(weight, 0);
-  return weightKg > 1 ? basePrice * weightKg : basePrice;
-}
-
 function normalizeImages(row: any): string[] {
   if (Array.isArray(row?.images)) return row.images.filter(Boolean);
   if (typeof row?.images === "string" && row.images.trim())
@@ -300,6 +294,25 @@ function isActiveRoute(curPath: string, path: string) {
 
 function formatMoneyBR(v: number) {
   return (Number(v) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function isPackageSale(product: any) {
+  return isPackageProduct(product);
+}
+
+function getSaleTypeLabel(product: any) {
+  return isPackageSale(product) ? "Pacote" : "KG";
+}
+
+function getSaleUnitLabel(product: any) {
+  const weight = parseBRNumber(product?.weight_input ?? product?.weight, 0);
+  if (isPackageSale(product)) return "por pacote";
+  return weight > 1 ? "/kg" : "";
+}
+
+function getSaleFinalPrice(basePrice: number, weight: number, product: any) {
+  if (isPackageSale(product)) return basePrice;
+  return weight > 1 ? basePrice * weight : basePrice;
 }
 
 function getDisplayPrice(p: any) {
@@ -1176,12 +1189,10 @@ export default function Admin() {
                             <div className="mt-2 flex flex-wrap gap-2 text-[12px] font-semibold">
                               <Badge variant="secondary">{catLabel || "Sem categoria"}</Badge>
                               {pinned && <Badge>📌 Topo</Badge>}
-                              {p.isPackage && (
-                                <Badge className="gap-1">
-                                  <Package className="h-3 w-3" />
-                                  Pacote
-                                </Badge>
-                              )}
+                              <Badge className="gap-1">
+                                <Package className="h-3 w-3" />
+                                {getSaleTypeLabel(p)}
+                              </Badge>
                               {p.featured && <Badge>⭐ Destaque</Badge>}
                               {p.isLaunch && <Badge variant="outline">Lançamento</Badge>}
                               {p.inStock === false && (
@@ -1200,6 +1211,7 @@ export default function Admin() {
                               ID: {p.old_id !== null ? p.old_id : p.id}
                               {p.packageInfo ? ` • ${p.packageInfo}` : ""}
                               {w ? ` • ${w}kg` : ""}
+                              {` • venda: ${getSaleTypeLabel(p)}`}
                               {showTopControls ? ` • ordem: ${order}` : ""}
                             </div>
 
@@ -1399,6 +1411,30 @@ export default function Admin() {
 
                 {/* 2 preços */}
                 <div className="rounded-[24px] border border-gray-200 bg-white p-3">
+                  <div className="text-[13px] font-extrabold text-gray-900">Tipo de venda</div>
+                  <div className="text-[11px] text-gray-500 font-semibold mt-1">
+                    KG multiplica preço pelo peso. Pacote usa o preço final informado.
+                  </div>
+
+                  <div className="mt-3">
+                    <Select
+                      value={editing.isPackage ? "pacote" : "kg"}
+                      onValueChange={(value) =>
+                        setEditing({ ...editing, isPackage: value === "pacote" })
+                      }
+                    >
+                      <SelectTrigger className="h-12 rounded-2xl">
+                        <SelectValue placeholder="Selecione o tipo de venda" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="kg">KG</SelectItem>
+                        <SelectItem value="pacote">Pacote</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-gray-200 bg-white p-3">
                   <div className="text-[13px] font-extrabold text-gray-900">Preços por tabela</div>
                   <div className="text-[11px] text-gray-500 font-semibold mt-1">
                     Defina só atacado e varejo. O mesmo valor será salvo para CPF e CNPJ.
@@ -1442,17 +1478,18 @@ export default function Admin() {
                       <div className="rounded-2xl bg-white/70 border border-emerald-100 p-3">
                         <div className="text-[11px] text-emerald-700">Atacado</div>
                         <div className="mt-1">
-                          {formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0))}
-                          {parseBRNumber(editing.weight_input ?? editing.weight, 0) > 1 ? "/kg" : ""}
+                          {formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0))}{" "}
+                          {getSaleUnitLabel(editing)}
                         </div>
                         <div className="text-emerald-700 mt-1">
                           Peso: {parseBRNumber(editing.weight_input ?? editing.weight, 0).toLocaleString("pt-BR")}kg
                         </div>
                         <div className="mt-1 font-extrabold">
                           Final: {formatMoneyBR(
-                            getCatalogPreviewPrice(
-                              editing.price_atacado_input ?? editing.price_atacado,
-                              editing.weight_input ?? editing.weight
+                            getSaleFinalPrice(
+                              parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0),
+                              parseBRNumber(editing.weight_input ?? editing.weight, 0),
+                              editing
                             )
                           )}
                         </div>
@@ -1461,17 +1498,18 @@ export default function Admin() {
                       <div className="rounded-2xl bg-white/70 border border-emerald-100 p-3">
                         <div className="text-[11px] text-emerald-700">Varejo</div>
                         <div className="mt-1">
-                          {formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0))}
-                          {parseBRNumber(editing.weight_input ?? editing.weight, 0) > 1 ? "/kg" : ""}
+                          {formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0))}{" "}
+                          {getSaleUnitLabel(editing)}
                         </div>
                         <div className="text-emerald-700 mt-1">
                           Peso: {parseBRNumber(editing.weight_input ?? editing.weight, 0).toLocaleString("pt-BR")}kg
                         </div>
                         <div className="mt-1 font-extrabold">
                           Final: {formatMoneyBR(
-                            getCatalogPreviewPrice(
-                              editing.price_varejo_input ?? editing.price_varejo,
-                              editing.weight_input ?? editing.weight
+                            getSaleFinalPrice(
+                              parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0),
+                              parseBRNumber(editing.weight_input ?? editing.weight, 0),
+                              editing
                             )
                           )}
                         </div>
@@ -1616,11 +1654,6 @@ export default function Admin() {
                   </div>
 
                   <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <Flag
-                      label="Pacote"
-                      checked={!!editing.isPackage}
-                      onCheckedChange={(v) => setEditing({ ...editing, isPackage: v })}
-                    />
                     <Flag
                       label="Destaque"
                       checked={!!editing.featured}

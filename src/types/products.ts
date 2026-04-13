@@ -43,7 +43,7 @@ export interface Product {
   description?: string;
   packageInfo: string; // Informação sobre a embalagem (ex: "Pacote de 1kg")
   weight: number; // Peso em kg
-  isPackage: boolean; // Se conta como pacote para pedido mínimo
+  isPackage: boolean; // false = vendido por kg | true = vendido por pacote
   isLaunch?: boolean;
   featured?: boolean; // Se deve aparecer em destaque
   extraInfo?: ProductExtraInfo; // Info adicional para a view expandida

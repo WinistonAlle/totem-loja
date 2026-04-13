@@ -14,6 +14,17 @@ function getPricingSource(product: any) {
   return product;
 }
 
+function toBool(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "sim", "yes"].includes(normalized)) return true;
+    if (["false", "0", "nao", "não", "no"].includes(normalized)) return false;
+  }
+  return false;
+}
+
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
@@ -30,6 +41,11 @@ function pickFirstDefined(product: any, keys: string[]): number | null {
     if (parsed != null && parsed >= 0) return parsed;
   }
   return null;
+}
+
+export function isPackageProduct(product: any): boolean {
+  const source = getPricingSource(product);
+  return toBool(source?.isPackage ?? source?.is_package ?? source?.is_pkg);
 }
 
 function pickFirstPositive(product: any, keys: string[]): number | null {
@@ -51,6 +67,8 @@ function hasExplicitPricingTable(product: any): boolean {
 
 function getWeightMultiplier(product: any): number {
   const source = getPricingSource(product);
+  if (isPackageProduct(source)) return 1;
+
   const weight = toNumber(source?.weight ?? source?.weight_kg ?? source?.weightKg);
   if (weight != null && weight > 1) return weight;
   return 1;
