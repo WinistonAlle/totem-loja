@@ -34,10 +34,11 @@ const Admin = lazy(() => import("./pages/Admin"));
 const ReportsDashboard = lazy(() => import("./pages/ReportsDashboard"));
 const AdminOrders = lazy(() => import("./pages/AdminOrders"));
 const SystemDiagnostics = lazy(() => import("./pages/SystemDiagnostics"));
+const OrderMonitorPage = lazy(() => import("./pages/OrderMonitorPage"));
 
 const queryClient = new QueryClient();
 
-type Role = "admin" | "clientecpf" | "clientecnpj" | "cliente" | string;
+type Role = "admin" | "orders_monitor" | "clientecpf" | "clientecnpj" | "cliente" | string;
 
 type CustomerSession = {
   id?: string | number;
@@ -228,8 +229,9 @@ function GlobalInactivityGuard() {
   const { clearCart, closeCart } = useCart();
   const [sessionTick, setSessionTick] = useState(0);
   const currentSession = getCustomerSession();
-  const isAdminSession = String(currentSession?.role ?? "").toLowerCase() === "admin";
-  const isDisabledRoute = ["/inicio", "/checkout"].includes(location.pathname) || isAdminSession;
+  const currentRole = String(currentSession?.role ?? "").toLowerCase();
+  const isPrivilegedSession = currentRole === "admin" || currentRole === "orders_monitor";
+  const isDisabledRoute = ["/inicio", "/checkout"].includes(location.pathname) || isPrivilegedSession;
 
   const INACTIVITY_LIMIT = 25000;
   const COUNTDOWN_SECONDS = 5;
@@ -479,6 +481,14 @@ function AppRoutes() {
 
           <Route path="/pedidosadmin" element={<Navigate to="/admin/pedidos" replace />} />
           <Route path="/adminorders" element={<Navigate to="/admin/pedidos" replace />} />
+          <Route
+            path="/painel-pedidos"
+            element={
+              <RequireRole allow={["admin", "orders_monitor"]} redirectTo="/inicio">
+                <OrderMonitorPage />
+              </RequireRole>
+            }
+          />
 
           <Route
             path="/relatorios"
