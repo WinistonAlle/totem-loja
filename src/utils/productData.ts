@@ -1,5 +1,11 @@
 import type { Product } from "@/types/products";
 
+function clonePricingSource<T extends Record<string, unknown>>(product: T): T {
+  const source = { ...(product ?? {}) } as T & { __pricingSource?: unknown };
+  delete source.__pricingSource;
+  return source;
+}
+
 export function toNumber(value: unknown, fallback = 0): number {
   if (typeof value === "number" && Number.isFinite(value)) return value;
 
@@ -61,8 +67,14 @@ export function getProductUnitPrice(product: Partial<Product> & Record<string, u
 }
 
 export function stampProductPrice<T extends Record<string, unknown>>(product: T, price: number): T & Product {
+  const pricingSource =
+    product && typeof product === "object" && (product as any).__pricingSource
+      ? (product as any).__pricingSource
+      : clonePricingSource(product);
+
   return ({
     ...product,
+    __pricingSource: pricingSource,
     price,
     employee_price: price,
     customer_price: price,

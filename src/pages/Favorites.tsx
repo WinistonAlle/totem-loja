@@ -12,6 +12,7 @@ import Cart from "../components/Cart";
 import { Input } from "@/components/ui/input";
 import logoGostinho from "@/images/logoc.png";
 import { resolveProductPrice } from "@/utils/productPricing";
+import { applyStoredWeightsToProducts } from "@/utils/productWeights";
 import { getPricingContext } from "@/utils/pricingContext";
 import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
@@ -277,7 +278,8 @@ const FavoritesPage: React.FC = () => {
         }
       });
 
-      setProducts(finalList);
+      const finalListWithWeight = await applyStoredWeightsToProducts(finalList);
+      setProducts(finalListWithWeight);
     } catch (err: any) {
       setLoadError(err?.message ?? "Erro ao carregar favoritos.");
       setProducts([]);

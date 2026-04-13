@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import CartToggle from "@/components/CartToggle";
 import Cart from "@/components/Cart";
 import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
+import { applyStoredWeightsToProducts } from "@/utils/productWeights";
 import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import {
@@ -493,7 +494,9 @@ const MyOrdersPage: React.FC = () => {
       const prodByOldId = new Map<string, Product>();
       const prodByName = new Map<string, Product>();
 
-      for (const p of prodRows) {
+      const weightedProdRows = await applyStoredWeightsToProducts(prodRows);
+
+      for (const p of weightedProdRows) {
         const mapped = mapSupabaseProduct(p);
         prodById.set(String(mapped.id), mapped);
         if ((mapped as any).old_id != null) prodByOldId.set(String((mapped as any).old_id), mapped);

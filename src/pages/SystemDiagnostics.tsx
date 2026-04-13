@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { clearStoredSystemEvents, listStoredSystemEvents } from "@/lib/systemEvents";
 
-const PRODUCTS_CACHE_KEY = "gm_catalog_products_v2";
+const PRODUCTS_CACHE_KEY = "gm_catalog_products_v6";
 
 type CatalogCacheSnapshot = {
   cachedAt: number | null;

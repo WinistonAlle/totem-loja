@@ -22,9 +22,10 @@ const HEADLESS = !KEEP_OPEN;
 
 const TYPE_DELAY = Number(process.env.SAIBWEB_TYPE_DELAY ?? 0);
 
-// ✅ Quando estiver no servidor, você NÃO quer pausar pedindo ENTER
-// Se quiser pausar em teste, use SAIBWEB_PAUSE=1 (opcional)
-const SHOULD_PAUSE = process.env.SAIBWEB_PAUSE === "1" || KEEP_OPEN;
+// ✅ Quando estiver no servidor, você NÃO quer pausar pedindo ENTER.
+// Mesmo que alguma env de debug esteja ligada, só pausamos se houver TTY real.
+const HAS_INTERACTIVE_TTY = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+const SHOULD_PAUSE = HAS_INTERACTIVE_TTY && (process.env.SAIBWEB_PAUSE === "1" || KEEP_OPEN);
 
 // ✅ (NOVO) se o webhook passar ORDER_ID, o runner tenta processar exatamente ele
 const TARGET_ORDER_ID = process.env.ORDER_ID ? String(process.env.ORDER_ID) : null;
@@ -34,6 +35,10 @@ const SAIBWEB_CUSTOMER_NAME = process.env.SAIBWEB_CUSTOMER_NAME?.trim() || "CONS
 const SAIBWEB_PRICE_TABLE_VAREJO = process.env.SAIBWEB_PRICE_TABLE_VAREJO?.trim() || "2";
 const SAIBWEB_PRICE_TABLE_ATACADO =
   process.env.SAIBWEB_PRICE_TABLE_ATACADO?.trim() || "6";
+const SHUTDOWN_SIGNAL_MESSAGE =
+  "Execucao interrompida: navegador/pagina SAIBWEB foi encerrado durante o processamento.";
+const SHUTDOWN_REQUEUE_MESSAGE =
+  "Execucao interrompida por reinicio/sinal do servico; pedido devolvido para a fila.";
 
 // =====================
 // ENV - SUPABASE
@@ -51,6 +56,8 @@ if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
   auth: { persistSession: false },
 });
+let activeBrowser: Awaited<ReturnType<typeof chromium.launch>> | null = null;
+let isShuttingDown = false;
 
 // =====================
 // TYPES (compat com retorno do Supabase: pode vir null)
@@ -136,7 +143,52 @@ function toFiniteNumberOrNull(v: unknown): number | null {
 
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "object" && err !== null) {
+    const maybeMessage = (err as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
   return String(err ?? "Erro desconhecido");
+}
+
+function isTargetClosedError(err: unknown): boolean {
+  const message = getErrorMessage(err).toLowerCase();
+  return (
+    message.includes("target page, context or browser has been closed") ||
+    message.includes("browser has been closed") ||
+    message.includes("page has been closed") ||
+    message.includes("context has been closed")
+  );
+}
+
+function normalizeAutomationError(err: unknown): Error {
+  if (isShuttingDown || isTargetClosedError(err)) {
+    return new Error(SHUTDOWN_SIGNAL_MESSAGE);
+  }
+
+  if (err instanceof Error) return err;
+  return new Error(getErrorMessage(err));
+}
+
+function ensureNotShuttingDown() {
+  if (isShuttingDown) {
+    throw new Error(SHUTDOWN_SIGNAL_MESSAGE);
+  }
+}
+
+function isShutdownAutomationError(err: unknown): boolean {
+  return getErrorMessage(err) === SHUTDOWN_SIGNAL_MESSAGE;
+}
+
+function isUuidLike(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
 }
 
 function orderTag(order: Pick<DbOrder, "id" | "order_number"> | { id: string; order_number?: string | null }) {
@@ -223,6 +275,11 @@ async function pickNextOrderToProcess(
 ): Promise<{ order: DbOrder; items: DbItem[] } | null> {
   // 1) Busca o pedido alvo (se veio)
   if (orderId) {
+    if (!isUuidLike(orderId)) {
+      console.log(`⏭️ ORDER_ID=${orderId} inválido; ignorando execução pontual.`);
+      return null;
+    }
+
     const { data: one, error } = await supabase
       .from("orders")
       .select(
@@ -244,13 +301,13 @@ async function pickNextOrderToProcess(
         `
       )
       .eq("id", orderId)
-      .eq("saibweb_status", "PENDING")
+      .in("saibweb_status", ["PENDING", "QUEUED"])
       .is("cancelled_at", null)
       .limit(1);
 
     if (error) throw error;
     if (!one || one.length === 0) {
-      console.log(`⏭️ ORDER_ID=${orderId} não está mais PENDING ou não existe.`);
+      console.log(`⏭️ ORDER_ID=${orderId} não está mais pendente na fila ou não existe.`);
       return null;
     }
     const order = one[0] as DbOrder;
@@ -278,7 +335,7 @@ async function pickNextOrderToProcess(
         cancelled_at
       `
     )
-    .eq("saibweb_status", "PENDING")
+    .in("saibweb_status", ["PENDING", "QUEUED"])
     .is("cancelled_at", null)
     .order("created_at", { ascending: true })
     .limit(1);
@@ -291,13 +348,13 @@ async function pickNextOrderToProcess(
 }
 
 async function lockAndLoadOrder(order: DbOrder): Promise<{ order: DbOrder; items: DbItem[] } | null> {
-  console.log(`${orderTag(order)} 🔒 Tentando mover PENDING -> PROCESSING`);
+  console.log(`${orderTag(order)} 🔒 Tentando mover ${order.saibweb_status ?? "pendente"} -> PROCESSING`);
 
   const { data: locked, error: lockErr } = await supabase
     .from("orders")
     .update({ saibweb_status: "PROCESSING", saibweb_error: null })
     .eq("id", order.id)
-    .eq("saibweb_status", "PENDING")
+    .in("saibweb_status", ["PENDING", "QUEUED"])
     .select("id");
 
   if (lockErr) throw lockErr;
@@ -384,7 +441,7 @@ async function lockAndLoadOrder(order: DbOrder): Promise<{ order: DbOrder; items
 
 async function markOrderSuccess(orderId: string, extra?: { externalId?: string | null }) {
   console.log(`[order ${orderId}] ✅ Marcando status SYNCED`);
-  await supabase
+  const { error } = await supabase
     .from("orders")
     .update({
       saibweb_status: "SYNCED",
@@ -393,49 +450,84 @@ async function markOrderSuccess(orderId: string, extra?: { externalId?: string |
       saibweb_external_id: extra?.externalId ?? null,
     })
     .eq("id", orderId);
+
+  if (error) {
+    throw new Error(`[order ${orderId}] Falha ao marcar SYNCED: ${getErrorMessage(error)}`);
+  }
 }
 
 async function markOrderError(orderId: string, message: string) {
   console.log(`[order ${orderId}] ❌ Marcando status ERROR: ${message}`);
-  await supabase
+  const { error } = await supabase
     .from("orders")
     .update({
       saibweb_status: "ERROR",
       saibweb_error: (message ?? "Erro desconhecido").slice(0, 1000),
     })
     .eq("id", orderId);
+
+  if (error) {
+    throw new Error(`[order ${orderId}] Falha ao marcar ERROR: ${getErrorMessage(error)}`);
+  }
+}
+
+async function requeueOrderAfterShutdown(orderId: string) {
+  console.log(`[order ${orderId}] ♻️ Devolvendo pedido para PENDING após interrupção controlada`);
+  const { error } = await supabase
+    .from("orders")
+    .update({
+      saibweb_status: "PENDING",
+      saibweb_error: SHUTDOWN_REQUEUE_MESSAGE,
+    })
+    .eq("id", orderId);
+
+  if (error) {
+    throw new Error(`[order ${orderId}] Falha ao devolver pedido para PENDING: ${getErrorMessage(error)}`);
+  }
 }
 
 // =====================
 // PLAYWRIGHT HELPERS (XPath)
 // =====================
 async function clickByXPath(page: Page, xpath: string, opts?: { timeout?: number; force?: boolean }) {
-  const locator = page.locator(`xpath=${xpath}`).first();
-  await locator.waitFor({ state: "attached", timeout: opts?.timeout ?? 15000 });
-  await locator.scrollIntoViewIfNeeded().catch(() => {});
-  await locator.waitFor({ state: "visible", timeout: opts?.timeout ?? 15000 }).catch(() => {});
-  await locator.click({ delay: 30, force: opts?.force ?? false });
+  ensureNotShuttingDown();
+
+  try {
+    const locator = page.locator(`xpath=${xpath}`).first();
+    await locator.waitFor({ state: "attached", timeout: opts?.timeout ?? 15000 });
+    await locator.scrollIntoViewIfNeeded().catch(() => {});
+    await locator.waitFor({ state: "visible", timeout: opts?.timeout ?? 15000 }).catch(() => {});
+    await locator.click({ delay: 30, force: opts?.force ?? false });
+  } catch (err) {
+    throw normalizeAutomationError(err);
+  }
 }
 
 async function clickByXPathPreferButton(page: Page, xpath: string, opts?: { timeout?: number }) {
-  const base = page.locator(`xpath=${xpath}`).first();
-  await base.waitFor({ state: "attached", timeout: opts?.timeout ?? 15000 });
+  ensureNotShuttingDown();
 
-  const button = base.locator("xpath=ancestor::button[1]").first();
-  if ((await button.count().catch(() => 0)) > 0) {
-    await button.scrollIntoViewIfNeeded().catch(() => {});
-    await button.click({ delay: 30 }).catch(async () => {
-      await base.click({ delay: 30 }).catch(async () => {
-        await button.click({ delay: 30, force: true });
+  try {
+    const base = page.locator(`xpath=${xpath}`).first();
+    await base.waitFor({ state: "attached", timeout: opts?.timeout ?? 15000 });
+
+    const button = base.locator("xpath=ancestor::button[1]").first();
+    if ((await button.count().catch(() => 0)) > 0) {
+      await button.scrollIntoViewIfNeeded().catch(() => {});
+      await button.click({ delay: 30 }).catch(async () => {
+        await base.click({ delay: 30 }).catch(async () => {
+          await button.click({ delay: 30, force: true });
+        });
       });
-    });
-    return;
-  }
+      return;
+    }
 
-  await base.scrollIntoViewIfNeeded().catch(() => {});
-  await base.click({ delay: 30 }).catch(async () => {
-    await base.click({ delay: 30, force: true });
-  });
+    await base.scrollIntoViewIfNeeded().catch(() => {});
+    await base.click({ delay: 30 }).catch(async () => {
+      await base.click({ delay: 30, force: true });
+    });
+  } catch (err) {
+    throw normalizeAutomationError(err);
+  }
 }
 
 async function clearAndType(page: Page, value: string) {
@@ -586,7 +678,15 @@ async function preencherNovoCadastro(page: Page, customerIdentifier: string, obs
   const operacaoXPath =
     '//*[@id="scrollable-force-tabpanel-1"]/div/div/div[2]/form/div[2]/div[1]/div/div[2]/div/div/div[1]/div[2]';
 
-  await fillByXPathAndEnter(page, clienteXPath, customerIdentifier);
+  await clickByXPathPreferButton(page, clienteXPath, { timeout: 15000 });
+  await page.waitForTimeout(60);
+  await clearAndType(page, customerIdentifier);
+  await page.waitForTimeout(3000);
+  await page.keyboard.press("Enter").catch(() => {});
+  await page.waitForTimeout(140);
+  await page.keyboard.press("Tab").catch(() => {});
+  await page.waitForTimeout(90);
+
   await selectOperationByEnterOnly(page, operacaoXPath);
 
   const obsEl = page.locator("#obs_nota").first();
@@ -665,6 +765,7 @@ async function confirmarPedido(page: Page) {
 // PROCESSA 1 PEDIDO (extraído do antigo main)
 // =====================
 async function processOne(orderIdHint?: string | null) {
+  ensureNotShuttingDown();
   const job = await pickNextOrderToProcess(orderIdHint);
 
   if (!job) {
@@ -715,10 +816,12 @@ async function processOne(orderIdHint?: string | null) {
   }
 
   const browser = await chromium.launch({ headless: HEADLESS, slowMo: SLOW_MO });
+  activeBrowser = browser;
   const context = await browser.newContext({ viewport: { width: 1366, height: 768 } });
   const page = await context.newPage();
 
   try {
+    ensureNotShuttingDown();
     await loginSaibweb(page);
     await clickHamburgerMenu(page);
     await clickSFA(page);
@@ -741,8 +844,14 @@ async function processOne(orderIdHint?: string | null) {
 
     await waitForEnter("👉 Aperte ENTER para encerrar...");
   } catch (err: unknown) {
-    const msg = getErrorMessage(err);
+    const normalizedError = normalizeAutomationError(err);
+    const msg = getErrorMessage(normalizedError);
     console.error(`${orderTag(order)} ❌ Erro:`, msg);
+
+    if (isShutdownAutomationError(normalizedError)) {
+      await requeueOrderAfterShutdown(orderId);
+      return { processed: false };
+    }
 
     await safeShot(page, `err-order-${orderId}`);
     await markOrderError(orderId, msg);
@@ -753,7 +862,10 @@ async function processOne(orderIdHint?: string | null) {
       console.log("🟣 SAIBWEB_KEEP_OPEN=1 -> mantendo navegador aberto.");
       await waitForEnter("👉 Aperte ENTER para fechar o navegador...");
     }
-    await browser.close();
+    await browser.close().catch(() => {});
+    if (activeBrowser === browser) {
+      activeBrowser = null;
+    }
   }
 
   return { processed: true };
@@ -765,6 +877,7 @@ async function processOne(orderIdHint?: string | null) {
 async function main() {
   console.log("🚀 SAIBWEB runner — Supabase -> SAIBWEB (drain)");
   console.log(`⚙️ headless=${HEADLESS} slowMo=${SLOW_MO} keepOpen=${KEEP_OPEN}`);
+  console.log(`🖥️ interactive_tty=${HAS_INTERACTIVE_TTY} pause=${SHOULD_PAUSE}`);
   console.log(`🎯 ORDER_ID=${TARGET_ORDER_ID ?? "(none)"} (se vier, tenta processar esse primeiro)`);
 
   ensureDir(path.resolve("automation_screenshots"));
@@ -780,6 +893,7 @@ async function main() {
   }
 
   while (true) {
+    ensureNotShuttingDown();
     const { processed } = await processOne(null);
 
     if (!processed) break;
@@ -791,4 +905,33 @@ async function main() {
   console.log("🏁 Drain finalizado: sem pendências PENDING.");
 }
 
-main();
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ UnhandledPromiseRejection no runner:", getErrorMessage(reason));
+  process.exitCode = 1;
+});
+
+async function handleShutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`🛑 Runner recebeu ${signal}; encerrando com seguranca...`);
+  await activeBrowser?.close().catch(() => {});
+}
+
+process.on("SIGINT", () => {
+  void handleShutdown("SIGINT");
+});
+process.on("SIGTERM", () => {
+  void handleShutdown("SIGTERM");
+});
+
+main().catch((err) => {
+  const normalizedError = normalizeAutomationError(err);
+
+  if (isShutdownAutomationError(normalizedError)) {
+    console.log("🟡 Runner finalizado por shutdown controlado.");
+    process.exit(0);
+  }
+
+  console.error("❌ Falha fatal no runner:", getErrorMessage(normalizedError));
+  process.exit(1);
+});

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabase";
+import { getEmployeeCpfFromStorage, getEmployeeSession } from "@/utils/employeeSession";
 
 type OrderRow = {
   id: string;
@@ -64,14 +65,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 function safeGetEmployee() {
-  try {
-    const raw = localStorage.getItem("employee_session");
-    if (!raw) return {};
-    if (raw.trim().startsWith("{") || raw.trim().startsWith("[")) return JSON.parse(raw);
-    return {};
-  } catch {
-    return {};
-  }
+  return getEmployeeSession() ?? {};
 }
 
 function onlyDigits(s: string) {
@@ -324,22 +318,7 @@ export default function AdminOrders() {
 
   function actorCpfFromLocalStorage() {
     if (typeof window === "undefined") return "";
-
-    const possible =
-      localStorage.getItem("gm_employee_cpf") ||
-      localStorage.getItem("employee_cpf") ||
-      localStorage.getItem("cpf");
-
-    if (possible) return onlyDigits(possible);
-
-    try {
-      const raw = localStorage.getItem("employee_session");
-      if (!raw) return "";
-      const obj = JSON.parse(raw);
-      return onlyDigits(obj?.cpf || obj?.employee_cpf || "");
-    } catch {
-      return "";
-    }
+    return onlyDigits(getEmployeeCpfFromStorage());
   }
 
   async function getActorCpf(): Promise<string> {

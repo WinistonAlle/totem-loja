@@ -2,6 +2,7 @@
 import { supabase } from "@/lib/supabase";
 import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
 import { getPricingContext } from "@/utils/pricingContext";
+import { loadStoredWeightMap } from "@/utils/productWeights";
 import { recordSystemEvent } from "@/lib/systemEvents";
 import { WHOLESALE_WEIGHT_THRESHOLD_KG, getOrderTotalWeightKg, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
@@ -85,6 +86,31 @@ function getProductOldId(product: any): string | number | null {
   return raw;
 }
 
+function resolveSaibwebWebhookUrl(): string {
+  if (!SAIBWEB_WEBHOOK_URL) return "";
+
+  if (typeof window === "undefined") {
+    return SAIBWEB_WEBHOOK_URL;
+  }
+
+  try {
+    const parsed = new URL(SAIBWEB_WEBHOOK_URL, window.location.origin);
+    const currentHost = window.location.hostname;
+    const isLoopbackHost =
+      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
+    const pageIsRemoteHost =
+      currentHost !== "localhost" && currentHost !== "127.0.0.1" && currentHost !== "::1";
+
+    if (isLoopbackHost && pageIsRemoteHost) {
+      parsed.hostname = currentHost;
+    }
+
+    return parsed.toString();
+  } catch {
+    return SAIBWEB_WEBHOOK_URL;
+  }
+}
+
 function isMissingRpcError(error: any): boolean {
   const code = String(error?.code ?? "");
   const message = String(error?.message ?? "").toLowerCase();
@@ -158,7 +184,15 @@ async function loadAuthoritativeProducts(productIds: string[]): Promise<Map<stri
 
   if (error) throw error;
 
-  return new Map(((data as ProductRow[] | null) ?? []).map((product) => [String(product.id), product]));
+  const rows = (data as ProductRow[] | null) ?? [];
+  const weightMap = await loadStoredWeightMap(rows.map((product) => String(product.id)));
+
+  return new Map(
+    rows.map((product) => {
+      const nextWeight = weightMap.get(String(product.id));
+      return [String(product.id), nextWeight === undefined ? product : { ...product, weight: nextWeight }];
+    })
+  );
 }
 
 async function rollbackOrder(orderId: string) {
@@ -190,14 +224,15 @@ async function enqueueSaibwebOrder(orderId: string) {
     throw new Error("saibweb indisponivel");
   }
 
-  if (!SAIBWEB_WEBHOOK_URL) return { queued: false, skipped: true };
+  const webhookUrl = resolveSaibwebWebhookUrl();
+  if (!webhookUrl) return { queued: false, skipped: true };
 
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), SAIBWEB_TIMEOUT_MS);
 
   let response: Response;
   try {
-    response = await fetch(SAIBWEB_WEBHOOK_URL, {
+    response = await fetch(webhookUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

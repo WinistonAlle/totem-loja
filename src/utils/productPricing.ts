@@ -7,12 +7,27 @@ export type PricingContextLike = {
   price_table?: string | null;
 } | null;
 
+function getPricingSource(product: any) {
+  if (product && typeof product === "object" && product.__pricingSource && typeof product.__pricingSource === "object") {
+    return product.__pricingSource;
+  }
+  return product;
+}
+
 function toNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value === "string") {
     const normalized = value.replace(",", ".").trim();
     const parsed = Number(normalized);
     if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function pickFirstDefined(product: any, keys: string[]): number | null {
+  for (const key of keys) {
+    const parsed = toNumber(product?.[key]);
+    if (parsed != null && parsed >= 0) return parsed;
   }
   return null;
 }
@@ -25,8 +40,18 @@ function pickFirstPositive(product: any, keys: string[]): number | null {
   return null;
 }
 
+function hasExplicitPricingTable(product: any): boolean {
+  return [
+    "price_cpf_varejo",
+    "price_cnpj_varejo",
+    "price_cpf_atacado",
+    "price_cnpj_atacado",
+  ].some((key) => toNumber(product?.[key]) != null);
+}
+
 function getWeightMultiplier(product: any): number {
-  const weight = toNumber(product?.weight ?? product?.weight_kg ?? product?.weightKg);
+  const source = getPricingSource(product);
+  const weight = toNumber(source?.weight ?? source?.weight_kg ?? source?.weightKg);
   if (weight != null && weight > 1) return weight;
   return 1;
 }
@@ -40,11 +65,25 @@ function getExactContextPrice(product: any, ctx: PricingContextLike): number | n
   const customerType = ctx?.customer_type;
   const channel = ctx?.channel;
   if (!customerType || !channel) return null;
+  const source = getPricingSource(product);
 
-  return getFinalPriceFromKgValue(product, pickFirstPositive(product, [`price_${customerType}_${channel}`]));
+  if (hasExplicitPricingTable(source)) {
+    return getFinalPriceFromKgValue(source, pickFirstDefined(source, [`price_${customerType}_${channel}`])) ?? 0;
+  }
+
+  return getFinalPriceFromKgValue(source, pickFirstPositive(source, [`price_${customerType}_${channel}`]));
 }
 
 export function getChannelBasePrice(product: any, channel: ChannelType = "varejo"): number {
+  const source = getPricingSource(product);
+  const explicitVarejoKeys = ["price_cpf_varejo", "price_cnpj_varejo"];
+  const explicitAtacadoKeys = ["price_cnpj_atacado", "price_cpf_atacado"];
+
+  if (hasExplicitPricingTable(source)) {
+    const explicitKeys = channel === "atacado" ? explicitAtacadoKeys : explicitVarejoKeys;
+    return getFinalPriceFromKgValue(source, pickFirstDefined(source, explicitKeys)) ?? 0;
+  }
+
   const varejoKeys = [
     "price_cpf_varejo",
     "price_cnpj_varejo",
@@ -66,8 +105,8 @@ export function getChannelBasePrice(product: any, channel: ChannelType = "varejo
   const oppositeChannel = channel === "atacado" ? varejoKeys : atacadoKeys;
 
   return getFinalPriceFromKgValue(
-    product,
-    pickFirstPositive(product, ownChannel) ?? pickFirstPositive(product, oppositeChannel)
+    source,
+    pickFirstPositive(source, ownChannel) ?? pickFirstPositive(source, oppositeChannel)
   ) ?? 0;
 }
 

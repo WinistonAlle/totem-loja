@@ -1,5 +1,6 @@
 // src/services/auth.ts
 import { supabase } from "@/lib/supabase";
+import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 
 export type EmployeeSession = {
   id: string;
@@ -38,6 +39,7 @@ export async function checkCpfLogin(rawCpf: string): Promise<EmployeeSession> {
 
   // também limpa a sessão local do app
   localStorage.removeItem("employee_session");
+  emitAppEvent(APP_EVENT.employeeSessionChanged);
 
   /* -------------------------------------------------
      1) valida CPF via RPC (sem RLS)
@@ -90,10 +92,12 @@ export async function checkCpfLogin(rawCpf: string): Promise<EmployeeSession> {
   };
 
   localStorage.setItem("employee_session", JSON.stringify(session));
+  emitAppEvent(APP_EVENT.employeeSessionChanged);
   return session;
 }
 
 export async function logoutEmployee() {
   localStorage.removeItem("employee_session");
+  emitAppEvent(APP_EVENT.employeeSessionChanged);
   await supabase.auth.signOut();
 }

@@ -2,7 +2,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
-import { spawn } from "child_process";
+import cors from "cors";
+import { ChildProcess, spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
@@ -12,11 +13,17 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 
 const app = express();
+app.use(
+  cors({
+    origin: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-webhook-token"],
+  })
+);
 app.use(express.json({ limit: "2mb" }));
 
 const PORT = Number(process.env.SAIBWEB_WEBHOOK_PORT ?? 3333);
 const DEFAULT_SLOWMO = process.env.SAIBWEB_SLOWMO ?? "250";
-const WEBHOOK_TOKEN = process.env.SAIBWEB_WEBHOOK_TOKEN || "";
 const RECOVER_ON_BOOT = process.env.SAIBWEB_RECOVER_PROCESSING_ON_BOOT === "1";
 const PROCESSING_RECOVERY_MINUTES = Number(
   process.env.SAIBWEB_PROCESSING_RECOVERY_MINUTES ?? 20
@@ -42,6 +49,24 @@ const queue: string[] = [];
 const queuedOrRunning = new Set<string>();
 let isRunning = false;
 let lastRunAt: number | null = null;
+let httpServer: ReturnType<typeof app.listen> | null = null;
+let activeChild: ChildProcess | null = null;
+let isShuttingDown = false;
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (typeof err === "object" && err !== null) {
+    const maybeMessage = (err as { message?: unknown }).message;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return String(err);
+    }
+  }
+  return String(err ?? "Erro desconhecido");
+}
 
 /**
  * =====================
@@ -70,37 +95,28 @@ function buildCommand() {
 }
 
 function buildChildEnv(orderId?: string | null): NodeJS.ProcessEnv {
+  const childEnv: NodeJS.ProcessEnv = { ...process.env };
+
+  for (const key of Object.keys(childEnv)) {
+    if (key.startsWith("CODEX_")) {
+      delete childEnv[key];
+    }
+  }
+
   return {
-    ...process.env,
+    ...childEnv,
     SAIBWEB_SLOWMO: String(process.env.SAIBWEB_SLOWMO ?? DEFAULT_SLOWMO),
-    ...(process.env.SAIBWEB_KEEP_OPEN === "1" ? { SAIBWEB_KEEP_OPEN: "1" } : {}),
-    ...(process.env.SAIBWEB_PAUSE === "1" ? { SAIBWEB_PAUSE: "1" } : {}),
+    SAIBWEB_KEEP_OPEN: "0",
+    SAIBWEB_PAUSE: "0",
     ...(orderId ? { ORDER_ID: String(orderId) } : {}), // ✅ agora o runner usa isso
   };
 }
 
-function getRequestToken(req: express.Request) {
-  const authHeader = req.headers.authorization || "";
-  const bearer = authHeader.match(/^Bearer\s+(.+)$/i)?.[1] ?? "";
-  const headerToken = String(req.headers["x-webhook-token"] || "");
-  return bearer || headerToken;
-}
-
 function requireWebhookAuth(
-  req: express.Request,
-  res: express.Response,
+  _req: express.Request,
+  _res: express.Response,
   next: express.NextFunction
 ) {
-  if (!WEBHOOK_TOKEN) {
-    console.warn("🟡 SAIBWEB_WEBHOOK_TOKEN não configurado; bloqueando endpoint por segurança.");
-    return res.status(503).json({ ok: false, error: "Webhook token not configured" });
-  }
-
-  const provided = getRequestToken(req);
-  if (!provided || provided !== WEBHOOK_TOKEN) {
-    return res.status(401).json({ ok: false, error: "Unauthorized" });
-  }
-
   next();
 }
 
@@ -159,6 +175,11 @@ async function recoverStuckOrders() {
  * =====================
  */
 function enqueue(orderId: string | null) {
+  if (isShuttingDown) {
+    console.log("🟡 Ignorando novo item: webhook em shutdown.");
+    return { enqueued: false, shuttingDown: true };
+  }
+
   const id = orderId ?? "__NO_ID__";
 
   if (queuedOrRunning.has(id)) {
@@ -187,15 +208,25 @@ function runOne(orderId: string) {
     const child = spawn(command, args, {
       env: childEnv,
       cwd: PROJECT_ROOT,
-      stdio: "inherit",
+      stdio: ["ignore", "inherit", "inherit"],
       shell: false,
     });
+    activeChild = child;
 
-    child.on("close", (code) => {
+    child.on("close", (code, signal) => {
+      if (activeChild?.pid === child.pid) {
+        activeChild = null;
+      }
+      if (signal) {
+        console.error("⚠️ Runner encerrado por sinal:", signal);
+      }
       resolve({ ok: code === 0, code: code ?? null });
     });
 
     child.on("error", (err) => {
+      if (activeChild?.pid === child.pid) {
+        activeChild = null;
+      }
       console.error("❌ Falha ao iniciar automação:", err);
       resolve({ ok: false, code: null });
     });
@@ -207,23 +238,60 @@ async function processQueue() {
   isRunning = true;
 
   try {
-    while (queue.length > 0) {
+    while (!isShuttingDown && queue.length > 0) {
       const next = queue.shift()!;
       lastRunAt = Date.now();
 
       console.log("➡️ Processando:", next, "| restante:", queue.length);
+      try {
+        const result = await runOne(next);
 
-      const result = await runOne(next);
-
-      queuedOrRunning.delete(next);
-
-      if (result.ok) console.log("✅ Finalizado com sucesso.");
-      else console.log("⚠️ Finalizado com erro.");
+        if (result.ok) console.log("✅ Finalizado com sucesso.");
+        else console.log("⚠️ Finalizado com erro.");
+      } catch (error) {
+        console.error("❌ Falha inesperada ao processar item da fila:", error);
+      } finally {
+        queuedOrRunning.delete(next);
+      }
     }
   } finally {
     isRunning = false;
     console.log("🏁 Fila SAIBWEB vazia.");
   }
+}
+
+function waitForActiveChildExit(timeoutMs: number) {
+  if (!activeChild) return Promise.resolve();
+
+  const child = activeChild;
+
+  return new Promise<void>((resolve) => {
+    let finished = false;
+    let killTimer: NodeJS.Timeout | null = null;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(termTimer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve();
+    };
+
+    const termTimer = setTimeout(() => {
+      console.warn(`🟡 Runner não encerrou em ${timeoutMs}ms; enviando SIGTERM...`);
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          console.warn("🔴 Runner ainda ativo após SIGTERM; enviando SIGKILL...");
+          child.kill("SIGKILL");
+        }
+      }, 5000);
+      killTimer.unref();
+    }, timeoutMs);
+
+    child.once("close", finish);
+    child.once("error", finish);
+  });
 }
 
 /**
@@ -244,6 +312,10 @@ app.get("/health", requireWebhookAuth, (_req, res) => {
 });
 
 app.post("/webhook/new-order", requireWebhookAuth, (req, res) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ ok: false, error: "Webhook shutting down" });
+  }
+
   const orderId = extractOrderId(req.body);
   const r = enqueue(orderId);
 
@@ -255,21 +327,69 @@ app.post("/webhook/new-order", requireWebhookAuth, (req, res) => {
     running: isRunning,
   });
 
-  void processQueue();
+  void processQueue().catch((error) => {
+    console.error("❌ processQueue falhou:", getErrorMessage(error));
+  });
 });
 
-/**
- * =====================
- * BOOT
- * =====================
- */
-app.listen(PORT, async () => {
-  if (RECOVER_ON_BOOT) {
-    await recoverStuckOrders().catch((err) => {
-      console.error("❌ Erro ao executar recovery on boot:", err);
-    });
+async function boot() {
+  httpServer = app.listen(PORT, async () => {
+    if (RECOVER_ON_BOOT) {
+      await recoverStuckOrders().catch((err) => {
+        console.error("❌ Erro ao executar recovery on boot:", err);
+      });
+    }
+
+    console.log(`🧩 SAIBWEB webhook rodando em http://localhost:${PORT}`);
+    console.log("🔓 Webhook auth: desabilitada");
+  });
+
+  httpServer.on("error", (error) => {
+    console.error("❌ Falha no servidor webhook:", error);
+    process.exitCode = 1;
+  });
+}
+
+async function shutdown(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`🛑 Recebido ${signal}; encerrando webhook SAIBWEB...`);
+
+  if (!httpServer) {
+    process.exit(0);
+    return;
   }
 
-  console.log(`🧩 SAIBWEB webhook rodando em http://localhost:${PORT}`);
-  console.log(`🔐 Webhook auth: ${WEBHOOK_TOKEN ? "obrigatória" : "token ausente"}`);
+  await new Promise<void>((resolve) => {
+    httpServer?.close((error) => {
+      if (error) {
+        console.error("❌ Erro ao encerrar servidor webhook:", error);
+        process.exitCode = 1;
+      }
+      resolve();
+    });
+  });
+
+  if (activeChild) {
+    console.log(`⏳ Aguardando runner ativo encerrar (pid ${activeChild.pid})...`);
+    await waitForActiveChildExit(15000);
+  }
+
+  process.exit(process.exitCode ?? 0);
+}
+
+process.on("SIGINT", () => {
+  void shutdown("SIGINT");
 });
+process.on("SIGTERM", () => {
+  void shutdown("SIGTERM");
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ UnhandledPromiseRejection no webhook:", getErrorMessage(reason));
+});
+process.on("uncaughtException", (error) => {
+  console.error("❌ UncaughtException no webhook:", error);
+  process.exitCode = 1;
+});
+
+void boot();

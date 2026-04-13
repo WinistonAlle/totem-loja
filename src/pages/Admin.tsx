@@ -70,7 +70,8 @@ const ROUTES = {
 -------------------------------------------------------- */
 const FALLBACK_IMG = "/placeholder.png";
 const STORAGE_BUCKET = "product-images";
-const CATALOG_PRODUCTS_CACHE_KEY = "gm_catalog_products_v4";
+const CATALOG_PRODUCTS_CACHE_KEY = "gm_catalog_products_v6";
+const LEGACY_CATALOG_PRODUCTS_CACHE_KEYS = ["gm_catalog_products_v5"];
 
 /**
  * ✅ Regra didática:
@@ -147,6 +148,12 @@ function safeNumberOrNull(v: any): number | null {
 
 function safeNumber(v: any, fallback = 0): number {
   return parseBRNumber(v, fallback);
+}
+
+function getCatalogPreviewPrice(price: any, weight: any): number {
+  const basePrice = parseBRNumber(price, 0);
+  const weightKg = parseBRNumber(weight, 0);
+  return weightKg > 1 ? basePrice * weightKg : basePrice;
 }
 
 function normalizeImages(row: any): string[] {
@@ -318,6 +325,9 @@ function isPinned(p: any) {
 function invalidateCatalogProductsCache() {
   try {
     localStorage.removeItem(CATALOG_PRODUCTS_CACHE_KEY);
+    for (const legacyKey of LEGACY_CATALOG_PRODUCTS_CACHE_KEYS) {
+      localStorage.removeItem(legacyKey);
+    }
   } catch {}
   emitAppEvent(APP_EVENT.catalogProductsChanged);
 }
@@ -1431,23 +1441,39 @@ export default function Admin() {
                     <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12px] font-semibold text-emerald-950">
                       <div className="rounded-2xl bg-white/70 border border-emerald-100 p-3">
                         <div className="text-[11px] text-emerald-700">Atacado</div>
-                        <div className="mt-1">{formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0))}/kg</div>
+                        <div className="mt-1">
+                          {formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0))}
+                          {parseBRNumber(editing.weight_input ?? editing.weight, 0) > 1 ? "/kg" : ""}
+                        </div>
                         <div className="text-emerald-700 mt-1">
                           Peso: {parseBRNumber(editing.weight_input ?? editing.weight, 0).toLocaleString("pt-BR")}kg
                         </div>
                         <div className="mt-1 font-extrabold">
-                          Final: {formatMoneyBR(parseBRNumber(editing.price_atacado_input ?? editing.price_atacado, 0) * parseBRNumber(editing.weight_input ?? editing.weight, 0))}
+                          Final: {formatMoneyBR(
+                            getCatalogPreviewPrice(
+                              editing.price_atacado_input ?? editing.price_atacado,
+                              editing.weight_input ?? editing.weight
+                            )
+                          )}
                         </div>
                       </div>
 
                       <div className="rounded-2xl bg-white/70 border border-emerald-100 p-3">
                         <div className="text-[11px] text-emerald-700">Varejo</div>
-                        <div className="mt-1">{formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0))}/kg</div>
+                        <div className="mt-1">
+                          {formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0))}
+                          {parseBRNumber(editing.weight_input ?? editing.weight, 0) > 1 ? "/kg" : ""}
+                        </div>
                         <div className="text-emerald-700 mt-1">
                           Peso: {parseBRNumber(editing.weight_input ?? editing.weight, 0).toLocaleString("pt-BR")}kg
                         </div>
                         <div className="mt-1 font-extrabold">
-                          Final: {formatMoneyBR(parseBRNumber(editing.price_varejo_input ?? editing.price_varejo, 0) * parseBRNumber(editing.weight_input ?? editing.weight, 0))}
+                          Final: {formatMoneyBR(
+                            getCatalogPreviewPrice(
+                              editing.price_varejo_input ?? editing.price_varejo,
+                              editing.weight_input ?? editing.weight
+                            )
+                          )}
                         </div>
                       </div>
                     </div>

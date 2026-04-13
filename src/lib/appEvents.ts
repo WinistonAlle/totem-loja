@@ -1,5 +1,6 @@
 export const APP_EVENT = {
   customerSessionChanged: "customer_session_changed",
+  employeeSessionChanged: "employee_session_changed",
   pricingContextChanged: "pricing_context_changed",
   catalogProductsChanged: "catalog_products_changed",
 } as const;

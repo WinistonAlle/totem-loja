@@ -7,6 +7,7 @@ import ProductCard from "@/components/ProductCard";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { getChannelBasePrice } from "@/utils/productPricing";
+import { applyStoredWeightsToProducts } from "@/utils/productWeights";
 import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import {
@@ -252,7 +253,8 @@ const Destaques: React.FC = () => {
       .map((r) => mapById.get(String(r.product_id)))
       .filter(Boolean);
 
-    return mapProducts(sorted);
+    const weighted = await applyStoredWeightsToProducts(sorted);
+    return mapProducts(weighted);
   }
 
   async function loadFeaturedAuto() {
@@ -279,7 +281,8 @@ const Destaques: React.FC = () => {
     );
 
     const sorted = ids.map((id) => byId.get(String(id))).filter(Boolean);
-    return mapProducts(sorted);
+    const weighted = await applyStoredWeightsToProducts(sorted);
+    return mapProducts(weighted);
   }
 
   async function loadAll() {
@@ -381,7 +384,8 @@ const Destaques: React.FC = () => {
     const { data, error } = await supabase.from("products").select("*").limit(80);
     if (error) throw error;
 
-    const mapped = mapProducts((data as any[]) ?? []);
+    const weighted = await applyStoredWeightsToProducts((data as any[]) ?? []);
+    const mapped = mapProducts(weighted);
     const nq = normalizeForSearch(q);
 
     const filtered = mapped.filter((p) => {

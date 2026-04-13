@@ -1,29 +1,7 @@
 // src/components/ProtectedRoute.tsx
 import React from "react";
 import { Navigate } from "react-router-dom";
-
-type EmployeeSession = {
-  id: string;
-  full_name: string;
-  cpf: string;
-  role: string;
-};
-
-function safeGetEmployee(): EmployeeSession | null {
-  try {
-    const raw = localStorage.getItem("employee_session");
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-
-    if (!parsed.cpf || !parsed.role) return null;
-
-    return parsed as EmployeeSession;
-  } catch {
-    return null;
-  }
-}
+import { getEmployeeSession } from "@/utils/employeeSession";
 
 interface ProtectedRouteProps {
   children: JSX.Element;
@@ -43,7 +21,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   children,
   allowedRoles,
 }) => {
-  const employee = safeGetEmployee();
+  const employee = getEmployeeSession();
 
   // não está logado
   if (!employee) {
