@@ -1,6 +1,7 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { CalendarDays, Clock3, RefreshCcw } from "lucide-react";
+import { CalendarDays, Clock3, LogOut, RefreshCcw } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -23,8 +24,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/components/ui/sonner";
 import { useOrderMonitor } from "@/hooks/useOrderMonitor";
+import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 import { retryOrderAutomation } from "@/services/orderMonitor";
 import type { OrderMonitorOrder } from "@/types/order-monitor";
+import { clearCustomerSession as clearStoredCustomerSession } from "@/utils/customerSession";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -59,6 +62,7 @@ function rangeLabel(start: Date, end: Date) {
 }
 
 export default function OrderMonitorPage() {
+  const navigate = useNavigate();
   const {
     loading,
     orders,
@@ -85,6 +89,16 @@ export default function OrderMonitorPage() {
   const [retryStepOneOrder, setRetryStepOneOrder] = React.useState<OrderMonitorOrder | null>(null);
   const [retryStepTwoOrder, setRetryStepTwoOrder] = React.useState<OrderMonitorOrder | null>(null);
   const [retryPending, setRetryPending] = React.useState(false);
+
+  function handleLogout() {
+    try {
+      localStorage.removeItem("pricing_context");
+    } catch {}
+
+    clearStoredCustomerSession();
+    emitAppEvent(APP_EVENT.pricingContextChanged);
+    navigate("/inicio", { replace: true });
+  }
 
   async function handleRetryConfirm() {
     if (!retryStepTwoOrder) return;
@@ -117,6 +131,18 @@ export default function OrderMonitorPage() {
         <div className="absolute inset-x-0 top-0 h-[440px] bg-[linear-gradient(180deg,rgba(255,255,255,0.78),rgba(244,247,251,0.2),transparent)]" />
 
         <div className="relative mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleLogout}
+              className="h-11 rounded-2xl border-slate-200 bg-white/85 px-4 text-slate-700 shadow-sm hover:bg-white"
+            >
+              <LogOut className="h-4 w-4" />
+              Sair
+            </Button>
+          </div>
+
           <motion.section
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
