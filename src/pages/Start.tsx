@@ -527,8 +527,11 @@ const KeyButton = styled.button<{ $accent?: boolean }>`
 
 /* ---------------- Component ---------------- */
 export default function Start() {
-  const ADMIN_SHORTCUT_PIN = "250402";
-  const PIN_LENGTH = ADMIN_SHORTCUT_PIN.length;
+  const SHORTCUT_TARGETS = {
+    "250402": { route: "/admin", requiresAdminSession: true },
+    "230602": { route: "/painel-pedidos", requiresAdminSession: false, sessionRole: "orders_monitor" },
+  } as const;
+  const PIN_LENGTH = 6;
   const KEYPAD_VALUES = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
   const navigate = useNavigate();
   const [adminOpen, setAdminOpen] = useState(false);
@@ -603,21 +606,32 @@ export default function Start() {
     e.preventDefault();
     setAdminError("");
 
-    if (adminPin.trim() !== ADMIN_SHORTCUT_PIN) {
+    const shortcutTarget = SHORTCUT_TARGETS[adminPin.trim() as keyof typeof SHORTCUT_TARGETS];
+
+    if (!shortcutTarget) {
       setAdminError("PIN inválido.");
       return;
     }
 
     setAdminLoading(true);
     try {
-      saveCustomerSession({
-        id: "admin-shortcut",
-        name: "Administrador",
-        document: "admin-shortcut",
-        role: "admin",
-      });
+      if (shortcutTarget.requiresAdminSession) {
+        saveCustomerSession({
+          id: "admin-shortcut",
+          name: "Administrador",
+          document: "admin-shortcut",
+          role: "admin",
+        });
+      } else {
+        saveCustomerSession({
+          id: "orders-monitor-shortcut",
+          name: "Painel de Pedidos",
+          document: "orders-monitor-shortcut",
+          role: shortcutTarget.sessionRole ?? "cliente",
+        });
+      }
       setAdminOpen(false);
-      navigate("/admin", { replace: true });
+      navigate(shortcutTarget.route, { replace: true });
     } catch (error: any) {
       setAdminError(error?.message || "Não foi possível validar o acesso.");
     } finally {
@@ -661,14 +675,14 @@ export default function Start() {
       </Bottom>
 
       <Dialog open={adminOpen} onOpenChange={setAdminOpen}>
-        <GlassDialogContent>
+          <GlassDialogContent>
           <GlassHeader>
-            <GlassTitle>Acesso admin</GlassTitle>
+            <GlassTitle>Acesso restrito</GlassTitle>
           </GlassHeader>
 
           <HiddenForm onSubmit={handleAdminShortcutSubmit}>
             <HiddenHelp>
-              Informe o PIN de acesso administrativo.
+              Informe o PIN para abrir o ambiente interno.
             </HiddenHelp>
 
             <PinDots aria-hidden="true">

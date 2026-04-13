@@ -214,7 +214,7 @@ async function markSaibwebQueued(orderId: string) {
   await supabase
     .from("orders")
     .update({
-      saibweb_status: "QUEUED",
+      saibweb_status: "PENDING",
       saibweb_error: null,
     })
     .eq("id", orderId);
