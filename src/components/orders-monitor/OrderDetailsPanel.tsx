@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock3, Receipt, ShoppingBag, X } from "lucide-react";
+import { AlertTriangle, Clock3, Receipt, ShoppingBag, Scale, Tag, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -34,6 +34,8 @@ function OrderDetailsBody({
   onClose: () => void;
 }) {
   const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  const pricingTableLabel =
+    order.pricingTable === "atacado" ? "Atacado" : order.pricingTable === "varejo" ? "Varejo" : "Nao informado";
 
   return (
     <div className="flex h-full flex-col">
@@ -61,7 +63,7 @@ function OrderDetailsBody({
 
       <ScrollArea className="mt-6 flex-1 pr-4">
         <div className="space-y-6 pb-6">
-          <section className="grid gap-3 sm:grid-cols-3">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4">
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                 <Clock3 className="h-3.5 w-3.5" />
@@ -84,6 +86,22 @@ function OrderDetailsBody({
                 Valor total
               </p>
               <p className="mt-2 text-lg font-semibold">{currency.format(order.total)}</p>
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <Scale className="h-3.5 w-3.5" />
+                Peso total
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-700">{Number(order.totalWeightKg ?? 0).toFixed(2)} kg</p>
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200/80 bg-slate-50/80 p-4">
+              <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                <Tag className="h-3.5 w-3.5" />
+                Tabela
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-700">{pricingTableLabel}</p>
             </div>
           </section>
 
@@ -108,9 +126,14 @@ function OrderDetailsBody({
                     <p className="text-sm font-semibold text-slate-900">{item.name}</p>
                     <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">Item solicitado</p>
                   </div>
-                  <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
-                    x{item.quantity}
-                  </span>
+                  <div className="text-right">
+                    <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-semibold text-white">
+                      x{item.quantity}
+                    </span>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">
+                      {currency.format(Number(item.total ?? 0))}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -134,7 +157,7 @@ function OrderDetailsBody({
   );
 }
 
-export function OrderDetailsPanel({ order, open, onOpenChange, onRetryRequest, retryPending }: Props) {
+export function OrderDetailsPanel({ order, open, onOpenChange }: Props) {
   const isMobile = useIsMobile();
 
   if (!order) return null;

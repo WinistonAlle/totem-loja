@@ -6,6 +6,8 @@ export type OrderMonitorItem = {
   id: string;
   name: string;
   quantity: number;
+  total?: number | null;
+  weight?: number | null;
 };
 
 export type OrderMonitorOrder = {
@@ -17,6 +19,8 @@ export type OrderMonitorOrder = {
   total: number;
   items: OrderMonitorItem[];
   notes?: string | null;
+  totalWeightKg?: number | null;
+  pricingTable?: "varejo" | "atacado" | null;
   saibwebStatus?: OrderAutomationStatus;
   saibwebError?: string | null;
   isLive?: boolean;

@@ -8,6 +8,7 @@ type OrdersQueryRow = {
   id: string;
   order_number: string | null;
   customer_name: string | null;
+  payment_method: string | null;
   total_value: number | null;
   total_cents: number | null;
   status: string | null;
@@ -20,8 +21,15 @@ type OrdersQueryRow = {
 type OrderItemRow = {
   id: string;
   order_id: string;
+  product_id: string | null;
   product_name: string | null;
   quantity: number | null;
+  total_price: number | null;
+};
+
+type ProductWeightRow = {
+  id: string;
+  weight: number | string | null;
 };
 
 export type OrderMonitorDateRange = {
@@ -56,10 +64,17 @@ export function getDayRange(date: Date) {
   return { start, end };
 }
 
+function getPricingTable(paymentMethod: string | null): "varejo" | "atacado" | null {
+  const normalized = String(paymentMethod ?? "").toLowerCase();
+  if (normalized.includes("atacado")) return "atacado";
+  if (normalized.includes("varejo")) return "varejo";
+  return null;
+}
+
 export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
   const { data: ordersData, error: ordersError } = await supabase
     .from("orders")
-    .select("id, order_number, customer_name, total_value, total_cents, status, created_at, saibweb_status, saibweb_error, cancelled_at")
+    .select("id, order_number, customer_name, payment_method, total_value, total_cents, status, created_at, saibweb_status, saibweb_error, cancelled_at")
     .gte("created_at", range.start.toISOString())
     .lt("created_at", range.end.toISOString())
     .order("created_at", { ascending: false })
@@ -75,7 +90,7 @@ export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
   if (orderIds.length > 0) {
     const { data: itemsData, error: itemsError } = await supabase
       .from("order_items")
-      .select("id, order_id, product_name, quantity")
+      .select("id, order_id, product_id, product_name, quantity, total_price")
       .in("order_id", orderIds)
       .order("created_at", { ascending: true });
 
@@ -89,6 +104,31 @@ export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
     }, new Map<string, OrderItemRow[]>());
   }
 
+  const productIds = Array.from(
+    new Set(
+      Array.from(orderItemsByOrderId.values())
+        .flat()
+        .map((item) => item.product_id)
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  let weightByProductId = new Map<string, number>();
+
+  if (productIds.length > 0) {
+    const { data: productsData, error: productsError } = await supabase
+      .from("products")
+      .select("id, weight")
+      .in("id", productIds);
+
+    if (productsError) throw productsError;
+
+    weightByProductId = ((productsData ?? []) as ProductWeightRow[]).reduce((map, product) => {
+      map.set(String(product.id), Number(product.weight ?? 0) || 0);
+      return map;
+    }, new Map<string, number>());
+  }
+
   return liveOrders.map<OrderMonitorOrder>((row) => ({
       id: row.id,
       orderNumber: row.order_number,
@@ -97,6 +137,12 @@ export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
       status: mapBusinessStatus(row.status),
       total: Number(row.total_cents ?? 0) > 0 ? Number(row.total_cents) / 100 : Number(row.total_value ?? 0),
       notes: null,
+      pricingTable: getPricingTable(row.payment_method),
+      totalWeightKg: (orderItemsByOrderId.get(row.id) ?? []).reduce((sum, item) => {
+        const quantity = Number(item.quantity ?? 0) || 0;
+        const itemWeight = item.product_id ? weightByProductId.get(item.product_id) ?? 0 : 0;
+        return sum + itemWeight * quantity;
+      }, 0),
       saibwebStatus: row.saibweb_status ?? null,
       saibwebError: row.saibweb_error ?? null,
       isLive: true,
@@ -104,6 +150,8 @@ export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
         id: item.id,
         name: item.product_name?.trim() || "Item sem nome",
         quantity: Number(item.quantity ?? 0) || 0,
+        total: Number(item.total_price ?? 0) || 0,
+        weight: item.product_id ? weightByProductId.get(item.product_id) ?? 0 : 0,
       })),
     }));
 }
