@@ -21,6 +21,7 @@ const KEEP_OPEN = process.env.SAIBWEB_KEEP_OPEN === "1";
 const HEADLESS = !KEEP_OPEN;
 
 const TYPE_DELAY = Number(process.env.SAIBWEB_TYPE_DELAY ?? 0);
+const ITEM_TYPE_DELAY = Number(process.env.SAIBWEB_ITEM_TYPE_DELAY ?? TYPE_DELAY * 2);
 
 // ✅ Quando estiver no servidor, você NÃO quer pausar pedindo ENTER.
 // Mesmo que alguma env de debug esteja ligada, só pausamos se houver TTY real.
@@ -530,13 +531,13 @@ async function clickByXPathPreferButton(page: Page, xpath: string, opts?: { time
   }
 }
 
-async function clearAndType(page: Page, value: string) {
+async function clearAndType(page: Page, value: string, delay = TYPE_DELAY) {
   await page.keyboard.press("Control+A").catch(() => {});
   await page.keyboard.press("Meta+A").catch(() => {});
   await page.keyboard.press("Backspace").catch(() => {});
 
-  if (TYPE_DELAY > 0) {
-    await page.keyboard.type(value, { delay: TYPE_DELAY });
+  if (delay > 0) {
+    await page.keyboard.type(value, { delay });
   } else {
     await page.keyboard.insertText(value).catch(async () => {
       await page.keyboard.type(value, { delay: 0 });
@@ -544,11 +545,11 @@ async function clearAndType(page: Page, value: string) {
   }
 }
 
-async function fillByXPathAndEnter(page: Page, clickXpath: string, value: string) {
+async function fillByXPathAndEnter(page: Page, clickXpath: string, value: string, delay = TYPE_DELAY) {
   await clickByXPathPreferButton(page, clickXpath, { timeout: 15000 });
   await page.waitForTimeout(60);
 
-  await clearAndType(page, value);
+  await clearAndType(page, value, delay);
 
   await page.keyboard.press("Enter").catch(() => {});
   await page.waitForTimeout(140);
@@ -733,7 +734,7 @@ async function adicionarItemDoPedido(page: Page, itemCode: string, qtdSaibweb: n
   const adicionarXPath =
     '//*[@id="scrollable-force-tabpanel-2"]/div/div/div[1]/div[1]/button[4]';
 
-  await fillByXPathAndEnter(page, pesquisarItemXPath, itemCode);
+  await fillByXPathAndEnter(page, pesquisarItemXPath, itemCode, ITEM_TYPE_DELAY);
 
   const qtdEl = page.locator("#qtd_produto_add").first();
   await qtdEl.waitFor({ state: "visible", timeout: 15000 });
