@@ -60,6 +60,10 @@ const TOTEM_NAME_KEYBOARD_ROWS = [
   ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
   ["Z", "X", "C", "V", "B", "N", "M"],
 ];
+const SEARCH_KEYBOARD_ROWS = [
+  ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+  ...TOTEM_NAME_KEYBOARD_ROWS,
+];
 
 const ROUTES = {
   reports: "/relatorios",
@@ -1548,13 +1552,13 @@ const Index: React.FC = () => {
             </div>
 
             <div className="space-y-2 sm:space-y-3">
-              {TOTEM_NAME_KEYBOARD_ROWS.map((row, rowIndex) => (
+              {SEARCH_KEYBOARD_ROWS.map((row, rowIndex) => (
                 <div
                   key={rowIndex}
                   className={`grid gap-2 sm:gap-3 ${
-                    rowIndex === 1
+                    rowIndex === 2
                       ? "grid-cols-9 px-1 sm:px-6"
-                      : rowIndex === 2
+                      : rowIndex === 3
                       ? "grid-cols-7 px-6 sm:px-16"
                       : "grid-cols-10"
                   }`}
