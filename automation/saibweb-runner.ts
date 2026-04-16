@@ -99,6 +99,30 @@ type ProductRow = {
 // =====================
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// =====================
+// RETRY COM BACKOFF EXPONENCIAL
+// =====================
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { retries?: number; baseDelayMs?: number; label?: string } = {}
+): Promise<T> {
+  const { retries = 3, baseDelayMs = 1500, label = "operação" } = opts;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        const delay = baseDelayMs * Math.pow(2, attempt - 1);
+        console.log(`⚠️ ${label}: tentativa ${attempt}/${retries} falhou — aguardando ${delay}ms...`);
+        await sleep(delay);
+      }
+    }
+  }
+  throw lastErr;
+}
+
 function ensureDir(p: string) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
@@ -481,14 +505,15 @@ async function selectOperationByEnterOnly(page: Page, clickXpath: string) {
 async function loginSaibweb(page: Page) {
   console.log("🔐 Login SAIBWEB");
 
-  await page.goto(SAIBWEB_URL!, { waitUntil: "domcontentloaded" });
+  await page.goto(SAIBWEB_URL!, { waitUntil: "domcontentloaded", timeout: 30000 });
 
   await page.locator("input").first().fill(SAIBWEB_USER!);
   await page.locator("input[type='password']").fill(SAIBWEB_PASS!);
   await page.keyboard.press("Enter");
 
-  await page.waitForLoadState("networkidle");
-  await sleep(250);
+  // ✅ "load" é tolerante a internet instável; "networkidle" trava se houver polling contínuo
+  await page.waitForLoadState("load", { timeout: 30000 });
+  await sleep(500);
 
   console.log("✅ Login OK");
 }
@@ -646,9 +671,26 @@ async function adicionarItemDoPedido(page: Page, itemCode: string, qtdSaibweb: n
   await page.waitForTimeout(120);
 
   await clickByXPath(page, adicionarXPath, { timeout: 15000 });
-  await sleep(520);
 
-  console.log("✅ Item adicionado");
+  // ✅ Verificação: após adicionar, o ERP reseta o campo de quantidade (qtd_produto_add fica
+  // vazio ou zero). Se ainda tiver o valor que digitamos, o clique não foi processado.
+  try {
+    await page.waitForFunction(
+      (typed: string) => {
+        const el = document.querySelector("#qtd_produto_add") as HTMLInputElement | null;
+        return !el || el.value === "" || el.value === "0" || el.value !== typed;
+      },
+      formatQtyForInput(qtdSaibweb),
+      { timeout: 6000 }
+    );
+  } catch {
+    throw new Error(
+      `Item ${itemCode}: campo de quantidade não foi resetado após clicar em Adicionar — ERP pode não ter processado.`
+    );
+  }
+
+  await sleep(350);
+  console.log("✅ Item adicionado e verificado");
 }
 
 async function confirmarPedido(page: Page) {
@@ -657,9 +699,20 @@ async function confirmarPedido(page: Page) {
   const confirmarXPath = '//*[@id="scrollable-force-tabpanel-2"]/div/div/div[1]/div[1]/button[2]';
 
   await clickByXPath(page, confirmarXPath, { timeout: 20000 });
-  await sleep(900);
 
-  console.log("🎉 Pedido confirmado");
+  // ✅ Verificação: aguarda o ERP navegar de volta para a listagem de pedidos.
+  // Timeout generoso (25s) para internet lenta — se não navegar, o pedido não foi salvo.
+  try {
+    await page.getByText(/LISTAGEM DE PEDIDOS/i).waitFor({ state: "visible", timeout: 25000 });
+  } catch {
+    await safeShot(page, "confirmar-pedido-sem-navegacao");
+    throw new Error(
+      "Pedido não confirmado: ERP não voltou para LISTAGEM DE PEDIDOS após clicar em Confirmar."
+    );
+  }
+
+  await sleep(300);
+  console.log("🎉 Pedido confirmado e listagem verificada");
 }
 
 // =====================
@@ -731,10 +784,16 @@ async function processOne(orderIdHint?: string | null) {
     await selecionarTabelaPrecoAntesDosItens(page, priceTable);
 
     for (const it of items) {
-      await adicionarItemDoPedido(page, it.product_code, it.saibweb_qty);
+      await withRetry(
+        () => adicionarItemDoPedido(page, it.product_code, it.saibweb_qty),
+        { retries: 3, baseDelayMs: 1500, label: `item ${it.product_code}` }
+      );
     }
 
-    await confirmarPedido(page);
+    await withRetry(
+      () => confirmarPedido(page),
+      { retries: 2, baseDelayMs: 2000, label: "confirmar pedido" }
+    );
 
     await markOrderSuccess(orderId, { externalId: null });
 
