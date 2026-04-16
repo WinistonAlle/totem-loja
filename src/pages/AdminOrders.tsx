@@ -22,6 +22,9 @@ type OrderRow = {
 
   cancelled_at: string | null;
   cancel_reason: string | null;
+
+  saibweb_status: string | null;
+  saibweb_error: string | null;
 };
 
 type AdminActionRow = {
@@ -264,6 +267,38 @@ function statusPill(status?: string | null): CSSProperties {
   }
 }
 
+function saibwebPill(status?: string | null): CSSProperties {
+  const base: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: 999,
+    padding: "4px 8px",
+    fontSize: 11,
+    fontWeight: 900,
+    border: "1px solid rgba(0,0,0,0.08)",
+    whiteSpace: "nowrap",
+  };
+  switch (status) {
+    case "SYNCED":
+      return { ...base, background: "rgba(16,185,129,0.12)", color: "#065F46" };
+    case "PROCESSING":
+      return { ...base, background: "rgba(59,130,246,0.12)", color: "#1D4ED8" };
+    case "PENDING":
+      return { ...base, background: "rgba(245,158,11,0.12)", color: "#92400E" };
+    case "ERROR":
+      return { ...base, background: "rgba(239,68,68,0.12)", color: "#991B1B" };
+    default:
+      return { ...base, background: "rgba(0,0,0,0.04)", color: "#6B7280" };
+  }
+}
+
+const SAIBWEB_LABEL: Record<string, string> = {
+  PENDING: "⏳ Pendente",
+  PROCESSING: "🔄 Processando",
+  SYNCED: "✅ Sincronizado",
+  ERROR: "❌ Erro",
+};
+
 function useIsMobile(breakpoint = 940) {
   const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth < breakpoint : false));
 
@@ -402,6 +437,8 @@ export default function AdminOrders() {
           "created_at",
           "cancelled_at",
           "cancel_reason",
+          "saibweb_status",
+          "saibweb_error",
         ].join(",")
       )
       .order("created_at", { ascending: false });
@@ -558,7 +595,8 @@ export default function AdminOrders() {
       ["aguardando_separacao", "em_separacao", "pronto_para_retirada"].includes(o.status || "")
     ).length;
     const withWallet = orders.filter((o) => getWalletUsed(o) > 0).length;
-    return { total, canceled, delivered, pending, withWallet };
+    const saibwebErrors = orders.filter((o) => o.saibweb_status === "ERROR").length;
+    return { total, canceled, delivered, pending, withWallet, saibwebErrors };
   }, [orders]);
 
   const kpisWrapStyle: CSSProperties = useMemo(() => {
@@ -673,6 +711,11 @@ export default function AdminOrders() {
           <div style={kpiCardStyle}>
             <div style={styles.kpiLabel}>Com saldo</div>
             <div style={styles.kpiValue}>{summary.withWallet}</div>
+          </div>
+
+          <div style={{ ...kpiCardStyle, ...(summary.saibwebErrors > 0 ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.04)" } : {}) }}>
+            <div style={{ ...styles.kpiLabel, ...(summary.saibwebErrors > 0 ? { color: "#991B1B" } : {}) }}>Erros SAIBWEB</div>
+            <div style={{ ...styles.kpiValue, ...(summary.saibwebErrors > 0 ? { color: "#991B1B" } : {}) }}>{summary.saibwebErrors}</div>
           </div>
 
           <button
@@ -792,6 +835,7 @@ export default function AdminOrders() {
                         <th style={styles.th}>Pagamento</th>
                         <th style={styles.th}>Total</th>
                         <th style={styles.th}>Status</th>
+                        <th style={styles.th}>SAIBWEB</th>
                         <th style={styles.th}>Data</th>
                         <th style={{ ...styles.th, textAlign: "right" }}>Ações</th>
                       </tr>
@@ -826,6 +870,17 @@ export default function AdminOrders() {
 
                             <td style={styles.td}>
                               <span style={statusPill(o.status)}>{STATUS_LABEL[o.status || ""] || (o.status || "—")}</span>
+                            </td>
+
+                            <td style={styles.td}>
+                              <span style={saibwebPill(o.saibweb_status)}>
+                                {SAIBWEB_LABEL[o.saibweb_status || ""] || (o.saibweb_status || "—")}
+                              </span>
+                              {o.saibweb_status === "ERROR" && o.saibweb_error && (
+                                <div style={{ marginTop: 4, fontSize: 11, color: "#991B1B", maxWidth: 200, wordBreak: "break-word" }}>
+                                  {o.saibweb_error}
+                                </div>
+                              )}
                             </td>
 
                             <td style={styles.td}>{new Date(o.created_at).toLocaleString("pt-BR")}</td>
@@ -868,6 +923,9 @@ export default function AdminOrders() {
 
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                           <span style={statusPill(o.status)}>{STATUS_LABEL[o.status || ""] || (o.status || "—")}</span>
+                          <span style={saibwebPill(o.saibweb_status)}>
+                            {SAIBWEB_LABEL[o.saibweb_status || ""] || (o.saibweb_status || "—")}
+                          </span>
                           <Badge kind={meta.kind} tooltip={meta.tooltip} />
                         </div>
                       </div>
@@ -985,6 +1043,30 @@ export default function AdminOrders() {
                     </div>
                   );
                 })()}
+              </div>
+
+              {/* SAIBWEB */}
+              <div style={{ ...styles.section, ...(selected.saibweb_status === "ERROR" ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.03)" } : {}) }}>
+                <div style={styles.sectionTitle}>Automação SAIBWEB</div>
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={styles.summaryLabel}>Status:</span>
+                    <span style={saibwebPill(selected.saibweb_status)}>
+                      {SAIBWEB_LABEL[selected.saibweb_status || ""] || (selected.saibweb_status || "—")}
+                    </span>
+                  </div>
+                  {selected.saibweb_status === "ERROR" && selected.saibweb_error && (
+                    <div style={{ borderRadius: 12, border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.06)", padding: "10px 12px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#991B1B", marginBottom: 4 }}>Mensagem de erro:</div>
+                      <div style={{ fontSize: 12, color: "#7F1D1D", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{selected.saibweb_error}</div>
+                    </div>
+                  )}
+                  {selected.saibweb_status === "ERROR" && (
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                      Para redigitar esse pedido no SAIBWEB, use o painel de monitoramento de pedidos.
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Cancelamento */}
@@ -1392,7 +1474,7 @@ const styles: Record<string, CSSProperties> = {
 
   kpis: {
     display: "grid",
-    gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+    gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
     gap: 12,
     marginBottom: 16,
     alignItems: "stretch",
