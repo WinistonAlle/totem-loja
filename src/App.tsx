@@ -40,6 +40,9 @@ const queryClient = new QueryClient();
 
 type Role = "admin" | "orders_monitor" | "clientecpf" | "clientecnpj" | "cliente" | string;
 
+const ROLE_ADMIN: Role[] = ["admin"];
+const ROLE_ADMIN_MONITOR: Role[] = ["admin", "orders_monitor"];
+
 type CustomerSession = {
   id?: string | number;
   name?: string | null;
@@ -455,7 +458,7 @@ function AppRoutes() {
           <Route
             path="/diagnostico"
             element={
-              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+              <RequireRole allow={ROLE_ADMIN} redirectTo="/catalogo">
                 <SystemDiagnostics />
               </RequireRole>
             }
@@ -464,7 +467,7 @@ function AppRoutes() {
           <Route
             path="/admin"
             element={
-              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+              <RequireRole allow={ROLE_ADMIN} redirectTo="/catalogo">
                 <Admin />
               </RequireRole>
             }
@@ -473,7 +476,7 @@ function AppRoutes() {
           <Route
             path="/admin/pedidos"
             element={
-              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+              <RequireRole allow={ROLE_ADMIN} redirectTo="/catalogo">
                 <AdminOrders />
               </RequireRole>
             }
@@ -484,7 +487,7 @@ function AppRoutes() {
           <Route
             path="/painel-pedidos"
             element={
-              <RequireRole allow={["admin", "orders_monitor"]} redirectTo="/inicio">
+              <RequireRole allow={ROLE_ADMIN_MONITOR} redirectTo="/inicio">
                 <OrderMonitorPage />
               </RequireRole>
             }
@@ -493,7 +496,7 @@ function AppRoutes() {
           <Route
             path="/relatorios"
             element={
-              <RequireRole allow={["admin"]} redirectTo="/catalogo">
+              <RequireRole allow={ROLE_ADMIN} redirectTo="/catalogo">
                 <ReportsDashboard />
               </RequireRole>
             }

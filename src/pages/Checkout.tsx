@@ -158,7 +158,7 @@ const Checkout: React.FC = () => {
     setCountdownSec(SUCCESS_SECONDS);
 
     const t1 = window.setInterval(() => {
-      setCountdownSec((s) => (s <= 1 ? 1 : s - 1));
+      setCountdownSec((s) => Math.max(0, s - 1));
     }, 1000);
 
     const t2 = window.setTimeout(() => {
