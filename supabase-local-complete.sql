@@ -130,6 +130,8 @@ create table if not exists public.products (
   price_cnpj_atacado numeric(12,2) not null default 0,
   weight numeric(12,3) not null default 0,
   is_package boolean not null default false,
+  cigam_code text,
+  cigam_unit text,
   in_stock boolean not null default true,
   featured boolean not null default false,
   is_launch boolean not null default false,
@@ -145,6 +147,12 @@ create index if not exists products_old_id_idx on public.products(old_id);
 create index if not exists products_name_idx on public.products(name);
 create index if not exists products_category_idx on public.products(category);
 create index if not exists products_display_order_idx on public.products(display_order, name);
+create index if not exists products_cigam_code_idx on public.products (cigam_code) where cigam_code is not null;
+
+comment on column public.products.cigam_code is
+  'Código do material no CIGAM (suprimentos/es/Materiais). NULL = produto ainda não mapeado, não pode ir pro CIGAM.';
+comment on column public.products.cigam_unit is
+  'Unidade de medida do material no CIGAM (KG, PCT, CX, UN...). Controla como quantidade/preço são convertidos ao montar o pedido (KG multiplica pelo peso do pacote).';
 
 create table if not exists public.weight (
   product_id uuid primary key references public.products(id) on delete cascade,
@@ -175,6 +183,11 @@ create table if not exists public.orders (
   saibweb_error text,
   saibweb_synced_at timestamptz,
   saibweb_external_id text,
+  erp_status text,
+  erp_external_id text,
+  erp_error text,
+  erp_nota_fiscal text,
+  erp_synced_at timestamptz,
   cancel_reason text,
   cancelled_at timestamptz,
   created_at timestamptz not null default timezone('utc', now()),
@@ -185,6 +198,14 @@ create index if not exists orders_created_at_idx on public.orders(created_at des
 create index if not exists orders_customer_document_idx on public.orders(customer_document);
 create index if not exists orders_status_idx on public.orders(status);
 create index if not exists orders_saibweb_status_idx on public.orders(saibweb_status);
+create index if not exists orders_erp_status_idx on public.orders (erp_status);
+
+comment on column public.orders.erp_status is
+  'PENDING = aguardando lançamento no CIGAM. DONE = lançado (e efetivado, se CIGAM_AUTO_EFETIVAR_PEDIDO=1). ERROR = falhou, ver erp_error. NULL = pedido anterior à integração CIGAM.';
+comment on column public.orders.erp_external_id is
+  'Número do pedido gerado pelo CIGAM (Pedido/Salvar).';
+comment on column public.orders.erp_nota_fiscal is
+  'Número do documento fiscal (série CF1) emitido na efetivação, quando houve.';
 
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
@@ -434,7 +455,9 @@ begin
     spent_from_balance_cents,
     status,
     saibweb_status,
-    saibweb_error
+    saibweb_error,
+    erp_status,
+    erp_error
   )
   values (
     p_customer_id,
@@ -444,6 +467,8 @@ begin
     false,
     0,
     'aguardando_atendimento',
+    null,
+    null,
     'PENDING',
     null
   )
