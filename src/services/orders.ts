@@ -103,7 +103,7 @@ function resolveSaibwebWebhookUrl(): string {
       currentHost !== "localhost" && currentHost !== "127.0.0.1" && currentHost !== "::1";
 
     if (isLoopbackHost && pageIsRemoteHost) {
-      parsed.hostname = currentHost;
+      return new URL(parsed.pathname + parsed.search + parsed.hash, window.location.origin).toString();
     }
 
     return parsed.toString();
@@ -210,11 +210,21 @@ async function markSaibwebFailure(orderId: string, message: string) {
     .eq("id", orderId);
 }
 
-async function markSaibwebQueued(orderId: string) {
+async function markSaibwebPendingRetry(orderId: string, message: string) {
   await supabase
     .from("orders")
     .update({
       saibweb_status: "PENDING",
+      saibweb_error: message,
+    })
+    .eq("id", orderId);
+}
+
+async function markSaibwebQueued(orderId: string) {
+  await supabase
+    .from("orders")
+    .update({
+      saibweb_status: "QUEUED",
       saibweb_error: null,
     })
     .eq("id", orderId);
@@ -259,6 +269,18 @@ async function enqueueSaibwebOrder(orderId: string) {
   return { queued: true, skipped: false };
 }
 
+function shouldRetrySaibwebEnqueue(error: any): boolean {
+  const message = String(error?.message ?? "").toLowerCase();
+
+  return (
+    message.includes("failed to fetch") ||
+    message.includes("load failed") ||
+    message.includes("networkerror") ||
+    message.includes("network error") ||
+    message.includes("timeout ao enfileirar pedido no saibweb")
+  );
+}
+
 async function finalizeSaibweb(orderId: string, orderNumber: string | null): Promise<CreateOrderResult> {
   try {
     const saibwebResult = await enqueueSaibwebOrder(orderId);
@@ -275,6 +297,19 @@ async function finalizeSaibweb(orderId: string, orderNumber: string | null): Pro
   } catch (error: any) {
     const saibwebError =
       error?.message || "Pedido salvo, mas houve falha ao enviar para a integração SAIBWEB.";
+    if (shouldRetrySaibwebEnqueue(error)) {
+      const retryMessage =
+        "Pedido salvo. A integracao SAIBWEB sera retomada automaticamente em instantes.";
+      await markSaibwebPendingRetry(orderId, retryMessage);
+
+      return {
+        orderId,
+        orderNumber,
+        saibwebQueued: false,
+        saibwebError: retryMessage,
+      };
+    }
+
     await markSaibwebFailure(orderId, saibwebError);
 
     return {

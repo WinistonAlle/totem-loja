@@ -28,6 +28,10 @@ const RECOVER_ON_BOOT = process.env.SAIBWEB_RECOVER_PROCESSING_ON_BOOT === "1";
 const PROCESSING_RECOVERY_MINUTES = Number(
   process.env.SAIBWEB_PROCESSING_RECOVERY_MINUTES ?? 20
 );
+const AUTO_DRAIN_INTERVAL_MS = Number(process.env.SAIBWEB_AUTO_DRAIN_INTERVAL_MS ?? 15000);
+const AUTO_DRAIN_PRIORITY_WINDOW_MINUTES = Number(
+  process.env.SAIBWEB_AUTO_DRAIN_PRIORITY_WINDOW_MINUTES ?? 180
+);
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -52,6 +56,7 @@ let lastRunAt: number | null = null;
 let httpServer: ReturnType<typeof app.listen> | null = null;
 let activeChild: ChildProcess | null = null;
 let isShuttingDown = false;
+let autoDrainTimer: NodeJS.Timeout | null = null;
 
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error && err.message) return err.message;
@@ -169,6 +174,49 @@ async function recoverStuckOrders() {
   );
 }
 
+async function recoverBrowserEnqueueFailures() {
+  const priorityMinutes = Number.isFinite(AUTO_DRAIN_PRIORITY_WINDOW_MINUTES)
+    ? Math.max(5, AUTO_DRAIN_PRIORITY_WINDOW_MINUTES)
+    : 180;
+  const cutoffIso = new Date(Date.now() - priorityMinutes * 60 * 1000).toISOString();
+
+  const { data: candidates, error: candidatesError } = await supabase
+    .from("orders")
+    .select("id, order_number, saibweb_error, created_at")
+    .eq("saibweb_status", "ERROR")
+    .gte("created_at", cutoffIso)
+    .or("saibweb_error.ilike.%Failed to fetch%,saibweb_error.ilike.%NetworkError%,saibweb_error.ilike.%Load failed%");
+
+  if (candidatesError) {
+    console.error("❌ Falha ao buscar pedidos com erro de enfileiramento no navegador:", candidatesError);
+    return;
+  }
+
+  const recoverable = Array.isArray(candidates) ? candidates : [];
+  if (recoverable.length === 0) return;
+
+  const idsToRecover = recoverable.map((row: any) => row.id).filter(Boolean);
+
+  const { data: recovered, error } = await supabase
+    .from("orders")
+    .update({
+      saibweb_status: "PENDING",
+      saibweb_error: "Recuperado automaticamente apos falha de enfileiramento no navegador.",
+    })
+    .in("id", idsToRecover)
+    .select("id, order_number");
+
+  if (error) {
+    console.error("❌ Falha ao recuperar pedidos com erro de navegador:", error);
+    return;
+  }
+
+  console.log(
+    "♻️ Pedidos com falha de navegador recuperados para PENDING:",
+    recovered.map((row: any) => row.order_number || row.id)
+  );
+}
+
 /**
  * =====================
  * FILA SAIBWEB
@@ -230,6 +278,44 @@ function runOne(orderId: string) {
       console.error("❌ Falha ao iniciar automação:", err);
       resolve({ ok: false, code: null });
     });
+  });
+}
+
+async function findPriorityAutoDrainOrderId(): Promise<string | null> {
+  const priorityMinutes = Number.isFinite(AUTO_DRAIN_PRIORITY_WINDOW_MINUTES)
+    ? Math.max(5, AUTO_DRAIN_PRIORITY_WINDOW_MINUTES)
+    : 180;
+  const cutoffIso = new Date(Date.now() - priorityMinutes * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from("orders")
+    .select("id, order_number")
+    .in("saibweb_status", ["PENDING", "QUEUED"])
+    .gte("created_at", cutoffIso)
+    .is("cancelled_at", null)
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error("❌ Falha ao buscar pedido prioritário para auto-drain:", error);
+    return null;
+  }
+
+  return data?.[0]?.id ? String(data[0].id) : null;
+}
+
+async function scheduleAutoDrain() {
+  if (isShuttingDown) return;
+  if (queue.length > 0 || isRunning) return;
+
+  await recoverBrowserEnqueueFailures();
+
+  const priorityOrderId = await findPriorityAutoDrainOrderId();
+  const r = enqueue(priorityOrderId);
+  if (!r.enqueued) return;
+
+  void processQueue().catch((error) => {
+    console.error("❌ processQueue falhou no auto-drain:", getErrorMessage(error));
   });
 }
 
@@ -342,6 +428,15 @@ async function boot() {
 
     console.log(`🧩 SAIBWEB webhook rodando em http://localhost:${PORT}`);
     console.log("🔓 Webhook auth: desabilitada");
+    void scheduleAutoDrain();
+
+    if (AUTO_DRAIN_INTERVAL_MS > 0) {
+      autoDrainTimer = setInterval(() => {
+        void scheduleAutoDrain();
+      }, AUTO_DRAIN_INTERVAL_MS);
+      autoDrainTimer.unref();
+      console.log(`🔁 Auto-drain habilitado a cada ${AUTO_DRAIN_INTERVAL_MS}ms`);
+    }
   });
 
   httpServer.on("error", (error) => {
@@ -354,6 +449,11 @@ async function shutdown(signal: string) {
   if (isShuttingDown) return;
   isShuttingDown = true;
   console.log(`🛑 Recebido ${signal}; encerrando webhook SAIBWEB...`);
+
+  if (autoDrainTimer) {
+    clearInterval(autoDrainTimer);
+    autoDrainTimer = null;
+  }
 
   if (!httpServer) {
     process.exit(0);
