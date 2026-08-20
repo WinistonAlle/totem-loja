@@ -63,7 +63,7 @@ export function getProductWeight(product: Partial<Product> & Record<string, unkn
 }
 
 export function getProductUnitPrice(product: Partial<Product> & Record<string, unknown>): number {
-  return toNumber(product.employee_price ?? product.price, 0);
+  return toNumber(product.price ?? product.employee_price, 0);
 }
 
 export function stampProductPrice<T extends Record<string, unknown>>(product: T, price: number): T & Product {

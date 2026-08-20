@@ -464,10 +464,42 @@ begin
     coalesce(nullif(p.name, ''), 'Produto'),
     floor(i.quantity)::integer,
     case
-      when v_channel = 'atacado' and coalesce(p.price_cnpj_atacado, 0) > 0 then round(p.price_cnpj_atacado * 100)::integer
-      when v_channel = 'varejo' and coalesce(p.price_cpf_varejo, 0) > 0 then round(p.price_cpf_varejo * 100)::integer
-      when coalesce(p.price, 0) > 0 then round(p.price * 100)::integer
-      when coalesce(p.employee_price, 0) > 0 then round(p.employee_price * 100)::integer
+      when v_channel = 'atacado' and coalesce(p.price_cnpj_atacado, 0) > 0 then round(
+        p.price_cnpj_atacado
+        * case
+            when coalesce(p.is_package, false) then 1
+            when coalesce(p.weight, 0) > 1 then p.weight
+            else 1
+          end
+        * 100
+      )::integer
+      when v_channel = 'varejo' and coalesce(p.price_cpf_varejo, 0) > 0 then round(
+        p.price_cpf_varejo
+        * case
+            when coalesce(p.is_package, false) then 1
+            when coalesce(p.weight, 0) > 1 then p.weight
+            else 1
+          end
+        * 100
+      )::integer
+      when coalesce(p.price, 0) > 0 then round(
+        p.price
+        * case
+            when coalesce(p.is_package, false) then 1
+            when coalesce(p.weight, 0) > 1 then p.weight
+            else 1
+          end
+        * 100
+      )::integer
+      when coalesce(p.employee_price, 0) > 0 then round(
+        p.employee_price
+        * case
+            when coalesce(p.is_package, false) then 1
+            when coalesce(p.weight, 0) > 1 then p.weight
+            else 1
+          end
+        * 100
+      )::integer
       else 0
     end
   from jsonb_to_recordset(p_items) as i(product_id uuid, quantity numeric)

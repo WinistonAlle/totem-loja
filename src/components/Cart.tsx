@@ -1,5 +1,5 @@
 // src/components/Cart.tsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { X, Minus, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useCart } from "../contexts/CartContext";
@@ -8,17 +8,10 @@ import { toast } from "./ui/sonner";
 import { getPricingChannel, updatePricingChannel } from "@/utils/pricingContext";
 import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
-function getLinePrice(item: any) {
-  const p = item?.product ?? {};
-  const price = Number(p.employee_price ?? p.price ?? 0);
-  const qty = Number(item?.quantity ?? 0);
-  return price * qty;
-}
-
 const Cart: React.FC = () => {
   const navigate = useNavigate();
-  const { cartItems, totalWeight, addToCart, decreaseQuantity, removeFromCart, repriceCartFromPricingContext, isCartOpen, openCart, closeCart } =
-    useCart() as any;
+  const { cartItems, cartTotal, totalWeight, addToCart, decreaseQuantity, removeFromCart, repriceCartFromPricingContext, isCartOpen, openCart, closeCart } =
+    useCart();
   const [enter, setEnter] = useState(false);
   const [showWholesaleBlockCard, setShowWholesaleBlockCard] = useState(false);
   const pricingChannel = getPricingChannel();
@@ -46,11 +39,6 @@ const Cart: React.FC = () => {
       setShowWholesaleBlockCard(false);
     }
   }, [canProceedToCheckout, showWholesaleBlockCard]);
-
-  const total = useMemo(
-    () => (cartItems ?? []).reduce((acc: number, it: any) => acc + getLinePrice(it), 0),
-    [cartItems]
-  );
 
   const close = () => closeCart();
 
@@ -202,7 +190,7 @@ const Cart: React.FC = () => {
               {cartItems.map((it: any) => {
                 const p = it.product;
                 const qty = Number(it.quantity || 0);
-                const price = Number(p.employee_price ?? p.price ?? 0);
+                const price = Number(p.price ?? p.employee_price ?? 0);
                 const line = price * qty;
 
                 return (
@@ -346,7 +334,7 @@ const Cart: React.FC = () => {
           <div className="flex items-center justify-between mb-4 sm:mb-5">
             <div className="text-[14px] sm:text-[18px] font-semibold text-gray-500">Total</div>
             <div className="text-[24px] sm:text-[34px] leading-none font-extrabold text-gray-900">
-              {total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              {cartTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
             </div>
           </div>
 

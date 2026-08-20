@@ -33,3 +33,7 @@ output/
 # misc
 *.pem
 *.key
+
+# Claude local
+.claude/
+*.tsbuildinfo

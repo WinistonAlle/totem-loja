@@ -94,12 +94,7 @@ export function updatePricingChannel(channel: ChannelType) {
     const raw = storage.getItem(PRICING_CONTEXT_KEY);
     if (!raw) return;
     const parsed = JSON.parse(raw);
-    const customerType: CustomerType =
-      channel === "atacado"
-        ? parsed?.customer_type === "cnpj"
-          ? "cnpj"
-          : "cpf"
-        : "cpf";
+    const customerType: CustomerType = channel === "atacado" ? "cnpj" : "cpf";
 
     storage.setItem(
       PRICING_CONTEXT_KEY,
