@@ -205,7 +205,7 @@ const Checkout: React.FC = () => {
         return;
       }
 
-      const { orderId, orderNumber, saibwebQueued, saibwebError } = await createOrder({
+      const { orderId, orderNumber } = await createOrder({
         customerId: null,
         customerDocument: "TOTEM-CONSUMIDOR",
         customerName: trimmedCustomerName,
@@ -222,15 +222,9 @@ const Checkout: React.FC = () => {
       );
       setSuccessOpen(true);
 
-      if (saibwebQueued || !saibwebError) {
-        toast.success("Pedido enviado!", {
-          description: `Total: ${formatBRLFromCents(totalCents)} • Finalize no atendimento.`,
-        });
-      } else {
-        toast.warning("Pedido salvo com pendência de integração", {
-          description: saibwebError,
-        });
-      }
+      toast.success("Pedido enviado!", {
+        description: `Total: ${formatBRLFromCents(totalCents)} • Finalize no atendimento.`,
+      });
     } catch (err: any) {
       console.error("Erro ao finalizar pedido:", err);
       toast.error("Erro ao finalizar pedido", {

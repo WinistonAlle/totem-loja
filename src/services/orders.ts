@@ -20,10 +20,7 @@ type CreateOrderInput = {
   payOnPickupCents?: number | null;
 };
 
-const SAIBWEB_WEBHOOK_URL = import.meta.env.VITE_SAIBWEB_WEBHOOK_URL?.trim() || "";
-const SAIBWEB_WEBHOOK_TOKEN = import.meta.env.VITE_SAIBWEB_WEBHOOK_TOKEN?.trim() || "";
 const REQUIRE_ORDER_RPC = String(import.meta.env.VITE_REQUIRE_ORDER_RPC ?? "").toLowerCase() === "true";
-const SAIBWEB_TIMEOUT_MS = 12000;
 
 type ChannelType = "varejo" | "atacado";
 
@@ -52,8 +49,6 @@ type RpcOrderRow = {
 type CreateOrderResult = {
   orderId: string;
   orderNumber: string | null;
-  saibwebQueued: boolean;
-  saibwebError?: string | null;
 };
 
 async function recordOrderEventSafe(input: Parameters<typeof recordSystemEvent>[0]) {
@@ -85,31 +80,6 @@ function getProductOldId(product: any): string | number | null {
   const raw = product?.old_id ?? product?.oldId ?? null;
   if (raw === null || raw === undefined || raw === "") return null;
   return raw;
-}
-
-function resolveSaibwebWebhookUrl(): string {
-  if (!SAIBWEB_WEBHOOK_URL) return "";
-
-  if (typeof window === "undefined") {
-    return SAIBWEB_WEBHOOK_URL;
-  }
-
-  try {
-    const parsed = new URL(SAIBWEB_WEBHOOK_URL, window.location.origin);
-    const currentHost = window.location.hostname;
-    const isLoopbackHost =
-      parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1" || parsed.hostname === "::1";
-    const pageIsRemoteHost =
-      currentHost !== "localhost" && currentHost !== "127.0.0.1" && currentHost !== "::1";
-
-    if (isLoopbackHost && pageIsRemoteHost) {
-      return new URL(parsed.pathname + parsed.search + parsed.hash, window.location.origin).toString();
-    }
-
-    return parsed.toString();
-  } catch {
-    return SAIBWEB_WEBHOOK_URL;
-  }
 }
 
 function isMissingRpcError(error: any): boolean {
@@ -200,135 +170,18 @@ async function rollbackOrder(orderId: string) {
   await supabase.from("orders").delete().eq("id", orderId);
 }
 
-async function markSaibwebFailure(orderId: string, message: string) {
-  await supabase
-    .from("orders")
-    .update({
-      saibweb_status: "ERROR",
-      saibweb_error: message,
-    })
-    .eq("id", orderId);
-}
-
-async function markSaibwebPendingRetry(orderId: string, message: string) {
-  await supabase
-    .from("orders")
-    .update({
-      saibweb_status: "PENDING",
-      saibweb_error: message,
-    })
-    .eq("id", orderId);
-}
-
-async function markSaibwebQueued(orderId: string) {
-  await supabase
-    .from("orders")
-    .update({
-      saibweb_status: "QUEUED",
-      saibweb_error: null,
-    })
-    .eq("id", orderId);
-}
-
-async function enqueueSaibwebOrder(orderId: string) {
-  if (typeof window !== "undefined" && (window as any).__GM_SMOKE_SAIBWEB_FAILURE__ === true) {
-    throw new Error("saibweb indisponivel");
-  }
-
-  const webhookUrl = resolveSaibwebWebhookUrl();
-  if (!webhookUrl) return { queued: false, skipped: true };
-
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), SAIBWEB_TIMEOUT_MS);
-
-  let response: Response;
-  try {
-    response = await fetch(webhookUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(SAIBWEB_WEBHOOK_TOKEN ? { "x-webhook-token": SAIBWEB_WEBHOOK_TOKEN } : {}),
-      },
-      body: JSON.stringify({ order_id: orderId }),
-      signal: controller.signal,
-    });
-  } catch (error: any) {
-    if (error?.name === "AbortError") {
-      throw new Error(`Timeout ao enfileirar pedido no SAIBWEB (${SAIBWEB_TIMEOUT_MS}ms).`);
-    }
-    throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Falha ao enfileirar pedido no SAIBWEB (${response.status}): ${body || response.statusText}`);
-  }
-
-  return { queued: true, skipped: false };
-}
-
-function shouldRetrySaibwebEnqueue(error: any): boolean {
-  const message = String(error?.message ?? "").toLowerCase();
-
-  return (
-    message.includes("failed to fetch") ||
-    message.includes("load failed") ||
-    message.includes("networkerror") ||
-    message.includes("network error") ||
-    message.includes("timeout ao enfileirar pedido no saibweb")
-  );
-}
-
-async function finalizeSaibweb(orderId: string, orderNumber: string | null): Promise<CreateOrderResult> {
-  try {
-    const saibwebResult = await enqueueSaibwebOrder(orderId);
-    if (saibwebResult.queued) {
-      await markSaibwebQueued(orderId);
-    }
-
-    return {
+async function finalizeOrder(orderId: string, orderNumber: string | null): Promise<CreateOrderResult> {
+  await recordOrderEventSafe({
+    eventName: "order_erp_status",
+    severity: "info",
+    message: "Pedido criado e aguardando sincronização com o CIGAM.",
+    payload: {
       orderId,
       orderNumber,
-      saibwebQueued: saibwebResult.queued,
-      saibwebError: null,
-    };
-  } catch (error: any) {
-    const saibwebError =
-      error?.message || "Pedido salvo, mas houve falha ao enviar para a integração SAIBWEB.";
-    if (shouldRetrySaibwebEnqueue(error)) {
-      const retryMessage =
-        "Pedido salvo. A integracao SAIBWEB sera retomada automaticamente em instantes.";
-      await markSaibwebPendingRetry(orderId, retryMessage);
+    },
+  });
 
-      return {
-        orderId,
-        orderNumber,
-        saibwebQueued: false,
-        saibwebError: retryMessage,
-      };
-    }
-
-    await markSaibwebFailure(orderId, saibwebError);
-
-    return {
-      orderId,
-      orderNumber,
-      saibwebQueued: false,
-      saibwebError,
-    };
-  } finally {
-    await recordOrderEventSafe({
-      eventName: "order_saibweb_status",
-      severity: "info",
-      message: "Pedido processado para integracao SAIBWEB.",
-      payload: {
-        orderId,
-        orderNumber,
-      },
-    });
-  }
+  return { orderId, orderNumber };
 }
 
 async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrderResult | null> {
@@ -399,7 +252,7 @@ async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrde
     },
   });
 
-  return finalizeSaibweb(row.order_id, row.order_number ?? null);
+  return finalizeOrder(row.order_id, row.order_number ?? null);
 }
 
 async function createOrderViaClientFallback(input: CreateOrderInput): Promise<CreateOrderResult> {
@@ -465,8 +318,8 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
       wallet_debited: false,
       spent_from_balance_cents: 0,
       status: "aguardando_atendimento",
-      saibweb_status: "PENDING",
-      saibweb_error: null,
+      erp_status: "PENDING",
+      erp_error: null,
     })
     .select("id, order_number")
     .single();
@@ -501,7 +354,7 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
     },
   });
 
-  return finalizeSaibweb(orderId, orderNumber);
+  return finalizeOrder(orderId, orderNumber);
 }
 
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
@@ -518,7 +371,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
           orderId: rpcResult.orderId,
           orderNumber: rpcResult.orderNumber,
           durationMs: Date.now() - startedAt,
-          saibwebQueued: rpcResult.saibwebQueued,
         },
       });
       return rpcResult;
@@ -533,7 +385,6 @@ export async function createOrder(input: CreateOrderInput): Promise<CreateOrderR
         orderId: fallbackResult.orderId,
         orderNumber: fallbackResult.orderNumber,
         durationMs: Date.now() - startedAt,
-        saibwebQueued: fallbackResult.saibwebQueued,
       },
     });
     return fallbackResult;
