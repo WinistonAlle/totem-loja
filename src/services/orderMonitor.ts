@@ -1,9 +1,6 @@
 import { supabase } from "@/lib/supabase";
 import type { OrderAutomationStatus, OrderMonitorOrder, OrderMonitorStatus } from "@/types/order-monitor";
 
-const SAIBWEB_WEBHOOK_URL = import.meta.env.VITE_SAIBWEB_WEBHOOK_URL?.trim() || "";
-const SAIBWEB_WEBHOOK_TOKEN = import.meta.env.VITE_SAIBWEB_WEBHOOK_TOKEN?.trim() || "";
-
 type OrdersQueryRow = {
   id: string;
   order_number: string | null;
@@ -13,8 +10,10 @@ type OrdersQueryRow = {
   total_cents: number | null;
   status: string | null;
   created_at: string;
-  saibweb_status: OrderAutomationStatus;
-  saibweb_error: string | null;
+  erp_status: OrderAutomationStatus;
+  erp_error: string | null;
+  erp_external_id: string | null;
+  erp_nota_fiscal: string | null;
   cancelled_at: string | null;
 };
 
@@ -74,7 +73,9 @@ function getPricingTable(paymentMethod: string | null): "varejo" | "atacado" | n
 export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
   const { data: ordersData, error: ordersError } = await supabase
     .from("orders")
-    .select("id, order_number, customer_name, payment_method, total_value, total_cents, status, created_at, saibweb_status, saibweb_error, cancelled_at")
+    .select(
+      "id, order_number, customer_name, payment_method, total_value, total_cents, status, created_at, erp_status, erp_error, erp_external_id, erp_nota_fiscal, cancelled_at"
+    )
     .gte("created_at", range.start.toISOString())
     .lt("created_at", range.end.toISOString())
     .order("created_at", { ascending: false })
@@ -143,8 +144,10 @@ export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
         const itemWeight = item.product_id ? weightByProductId.get(item.product_id) ?? 0 : 0;
         return sum + itemWeight * quantity;
       }, 0),
-      saibwebStatus: row.saibweb_status ?? null,
-      saibwebError: row.saibweb_error ?? null,
+      erpStatus: row.erp_status ?? null,
+      erpError: row.erp_error ?? null,
+      erpExternalId: row.erp_external_id ?? null,
+      erpNotaFiscal: row.erp_nota_fiscal ?? null,
       isLive: true,
       items: (orderItemsByOrderId.get(row.id) ?? []).map((item) => ({
         id: item.id,
@@ -156,39 +159,36 @@ export async function fetchOrderMonitorOrders(range: OrderMonitorDateRange) {
     }));
 }
 
-export async function retryOrderAutomation(order: Pick<OrderMonitorOrder, "id" | "saibwebStatus">) {
-  if (order.saibwebStatus === "SYNCED") {
-    throw new Error("Pedidos já sincronizados não precisam de nova digitação.");
+/**
+ * Recoloca o pedido na fila do CIGAM. Nao existe mais webhook para chamar: o
+ * processo pm2 `totem-loja-cigam` varre `erp_status = "PENDING"` em loop, entao
+ * voltar a coluna para PENDING E o reenfileiramento.
+ */
+export async function retryOrderAutomation(
+  order: Pick<OrderMonitorOrder, "id" | "erpStatus" | "erpExternalId">
+) {
+  if (order.erpStatus === "DONE") {
+    throw new Error("Pedido ja lancado no CIGAM. Nao reenviar — geraria um segundo pedido.");
   }
 
-  if (!SAIBWEB_WEBHOOK_URL) {
-    throw new Error("Webhook da automação SAIBWEB não configurado.");
+  // Mesma regra que process-pending-orders.ts aplica do lado de la: se o
+  // cabecalho ja subiu numa tentativa anterior, reprocessar cria um pedido
+  // duplicado no ERP em vez de completar o que ficou pela metade.
+  if (order.erpExternalId) {
+    throw new Error(
+      `O cabecalho ${order.erpExternalId} ja existe no CIGAM de uma tentativa anterior. ` +
+        "Confira e complete o pedido direto na tela do CIGAM em vez de reenviar."
+    );
   }
 
   const { error: updateError } = await supabase
     .from("orders")
     .update({
-      saibweb_status: "PENDING",
-      saibweb_error: null,
-      saibweb_synced_at: null,
+      erp_status: "PENDING",
+      erp_error: null,
+      erp_synced_at: null,
     })
     .eq("id", order.id);
 
   if (updateError) throw updateError;
-
-  const response = await fetch(SAIBWEB_WEBHOOK_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(SAIBWEB_WEBHOOK_TOKEN ? { "x-webhook-token": SAIBWEB_WEBHOOK_TOKEN } : {}),
-    },
-    body: JSON.stringify({ order_id: order.id }),
-  });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(body || `Falha ao reenfileirar pedido (${response.status}).`);
-  }
-
-  return response.json().catch(() => null);
 }

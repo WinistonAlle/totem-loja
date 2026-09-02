@@ -24,8 +24,10 @@ type OrderRow = {
   cancelled_at: string | null;
   cancel_reason: string | null;
 
-  saibweb_status: string | null;
-  saibweb_error: string | null;
+  erp_status: string | null;
+  erp_error: string | null;
+  erp_external_id: string | null;
+  erp_nota_fiscal: string | null;
 };
 
 type AdminActionRow = {
@@ -261,7 +263,7 @@ function statusPill(status?: string | null): CSSProperties {
   }
 }
 
-function saibwebPill(status?: string | null): CSSProperties {
+function erpPill(status?: string | null): CSSProperties {
   const base: CSSProperties = {
     display: "inline-flex",
     alignItems: "center",
@@ -273,10 +275,8 @@ function saibwebPill(status?: string | null): CSSProperties {
     whiteSpace: "nowrap",
   };
   switch (status) {
-    case "SYNCED":
+    case "DONE":
       return { ...base, background: "rgba(16,185,129,0.12)", color: "#065F46" };
-    case "PROCESSING":
-      return { ...base, background: "rgba(59,130,246,0.12)", color: "#1D4ED8" };
     case "PENDING":
       return { ...base, background: "rgba(245,158,11,0.12)", color: "#92400E" };
     case "ERROR":
@@ -286,10 +286,9 @@ function saibwebPill(status?: string | null): CSSProperties {
   }
 }
 
-const SAIBWEB_LABEL: Record<string, string> = {
+const ERP_LABEL: Record<string, string> = {
   PENDING: "⏳ Pendente",
-  PROCESSING: "🔄 Processando",
-  SYNCED: "✅ Sincronizado",
+  DONE: "✅ Lançado",
   ERROR: "❌ Erro",
 };
 
@@ -416,8 +415,10 @@ export default function AdminOrders() {
           "created_at",
           "cancelled_at",
           "cancel_reason",
-          "saibweb_status",
-          "saibweb_error",
+          "erp_status",
+          "erp_error",
+          "erp_external_id",
+          "erp_nota_fiscal",
         ].join(",")
       )
       .order("created_at", { ascending: false });
@@ -574,8 +575,8 @@ export default function AdminOrders() {
       ["aguardando_separacao", "em_separacao", "pronto_para_retirada"].includes(o.status || "")
     ).length;
     const withWallet = orders.filter((o) => getWalletUsed(o) > 0).length;
-    const saibwebErrors = orders.filter((o) => o.saibweb_status === "ERROR").length;
-    return { total, canceled, delivered, pending, withWallet, saibwebErrors };
+    const erpErrors = orders.filter((o) => o.erp_status === "ERROR").length;
+    return { total, canceled, delivered, pending, withWallet, erpErrors };
   }, [orders]);
 
   const kpisWrapStyle: CSSProperties = useMemo(() => {
@@ -692,9 +693,9 @@ export default function AdminOrders() {
             <div style={styles.kpiValue}>{summary.withWallet}</div>
           </div>
 
-          <div style={{ ...kpiCardStyle, ...(summary.saibwebErrors > 0 ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.04)" } : {}) }}>
-            <div style={{ ...styles.kpiLabel, ...(summary.saibwebErrors > 0 ? { color: "#991B1B" } : {}) }}>Erros SAIBWEB</div>
-            <div style={{ ...styles.kpiValue, ...(summary.saibwebErrors > 0 ? { color: "#991B1B" } : {}) }}>{summary.saibwebErrors}</div>
+          <div style={{ ...kpiCardStyle, ...(summary.erpErrors > 0 ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.04)" } : {}) }}>
+            <div style={{ ...styles.kpiLabel, ...(summary.erpErrors > 0 ? { color: "#991B1B" } : {}) }}>Erros CIGAM</div>
+            <div style={{ ...styles.kpiValue, ...(summary.erpErrors > 0 ? { color: "#991B1B" } : {}) }}>{summary.erpErrors}</div>
           </div>
 
           <button
@@ -814,7 +815,7 @@ export default function AdminOrders() {
                         <th style={styles.th}>Pagamento</th>
                         <th style={styles.th}>Total</th>
                         <th style={styles.th}>Status</th>
-                        <th style={styles.th}>SAIBWEB</th>
+                        <th style={styles.th}>CIGAM</th>
                         <th style={styles.th}>Data</th>
                         <th style={{ ...styles.th, textAlign: "right" }}>Ações</th>
                       </tr>
@@ -852,12 +853,12 @@ export default function AdminOrders() {
                             </td>
 
                             <td style={styles.td}>
-                              <span style={saibwebPill(o.saibweb_status)}>
-                                {SAIBWEB_LABEL[o.saibweb_status || ""] || (o.saibweb_status || "—")}
+                              <span style={erpPill(o.erp_status)}>
+                                {ERP_LABEL[o.erp_status || ""] || (o.erp_status || "—")}
                               </span>
-                              {o.saibweb_status === "ERROR" && o.saibweb_error && (
+                              {o.erp_status === "ERROR" && o.erp_error && (
                                 <div style={{ marginTop: 4, fontSize: 11, color: "#991B1B", maxWidth: 200, wordBreak: "break-word" }}>
-                                  {o.saibweb_error}
+                                  {o.erp_error}
                                 </div>
                               )}
                             </td>
@@ -902,8 +903,8 @@ export default function AdminOrders() {
 
                         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
                           <span style={statusPill(o.status)}>{STATUS_LABEL[o.status || ""] || (o.status || "—")}</span>
-                          <span style={saibwebPill(o.saibweb_status)}>
-                            {SAIBWEB_LABEL[o.saibweb_status || ""] || (o.saibweb_status || "—")}
+                          <span style={erpPill(o.erp_status)}>
+                            {ERP_LABEL[o.erp_status || ""] || (o.erp_status || "—")}
                           </span>
                           <Badge kind={meta.kind} tooltip={meta.tooltip} />
                         </div>
@@ -1024,25 +1025,37 @@ export default function AdminOrders() {
                 })()}
               </div>
 
-              {/* SAIBWEB */}
-              <div style={{ ...styles.section, ...(selected.saibweb_status === "ERROR" ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.03)" } : {}) }}>
-                <div style={styles.sectionTitle}>Automação SAIBWEB</div>
+              {/* CIGAM */}
+              <div style={{ ...styles.section, ...(selected.erp_status === "ERROR" ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.03)" } : {}) }}>
+                <div style={styles.sectionTitle}>Integração CIGAM</div>
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={styles.summaryLabel}>Status:</span>
-                    <span style={saibwebPill(selected.saibweb_status)}>
-                      {SAIBWEB_LABEL[selected.saibweb_status || ""] || (selected.saibweb_status || "—")}
+                    <span style={erpPill(selected.erp_status)}>
+                      {ERP_LABEL[selected.erp_status || ""] || (selected.erp_status || "—")}
                     </span>
                   </div>
-                  {selected.saibweb_status === "ERROR" && selected.saibweb_error && (
-                    <div style={{ borderRadius: 12, border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.06)", padding: "10px 12px" }}>
-                      <div style={{ fontSize: 12, fontWeight: 900, color: "#991B1B", marginBottom: 4 }}>Mensagem de erro:</div>
-                      <div style={{ fontSize: 12, color: "#7F1D1D", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{selected.saibweb_error}</div>
+                  {selected.erp_external_id && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={styles.summaryLabel}>Pedido no CIGAM:</span>
+                      <span style={{ fontSize: 13, fontWeight: 900 }}>{selected.erp_external_id}</span>
                     </div>
                   )}
-                  {selected.saibweb_status === "ERROR" && (
+                  {selected.erp_nota_fiscal && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={styles.summaryLabel}>Nota fiscal:</span>
+                      <span style={{ fontSize: 13, fontWeight: 900 }}>{selected.erp_nota_fiscal}</span>
+                    </div>
+                  )}
+                  {selected.erp_status === "ERROR" && selected.erp_error && (
+                    <div style={{ borderRadius: 12, border: "1px solid rgba(239,68,68,0.25)", background: "rgba(239,68,68,0.06)", padding: "10px 12px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 900, color: "#991B1B", marginBottom: 4 }}>Mensagem de erro:</div>
+                      <div style={{ fontSize: 12, color: "#7F1D1D", wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{selected.erp_error}</div>
+                    </div>
+                  )}
+                  {selected.erp_status === "ERROR" && (
                     <div style={{ fontSize: 12, opacity: 0.7 }}>
-                      Para redigitar esse pedido no SAIBWEB, use o painel de monitoramento de pedidos.
+                      Para reenfileirar esse pedido para o CIGAM, use o painel de monitoramento de pedidos.
                     </div>
                   )}
                 </div>

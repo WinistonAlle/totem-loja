@@ -419,7 +419,7 @@ const Checkout: React.FC = () => {
               <div className="px-4 sm:px-5 py-3 sm:py-[15px] border-b bg-white">
                 <p className="text-lg sm:text-xl font-extrabold">Identificação do pedido</p>
                 <p className="mt-1 text-[14px] sm:text-[16px] text-gray-600">
-                  O pedido vai para o cliente fixo CONSUMIDOR. O nome informado antes do catálogo será enviado para a atendente localizar e para a observação no SAIBWEB.
+                  O pedido vai para o cliente fixo CONSUMIDOR. O nome informado antes do catálogo será enviado para a atendente localizar e para a observação no pedido do CIGAM.
                 </p>
               </div>
 

@@ -1,6 +1,9 @@
 export type OrderMonitorStatus = "novo" | "em_preparo" | "pronto" | "finalizado" | "cancelado";
 
-export type OrderAutomationStatus = "PENDING" | "PROCESSING" | "SYNCED" | "ERROR" | null;
+// Os únicos valores que `orders.erp_status` recebe hoje: o checkout nasce
+// PENDING e automation/cigam/process-pending-orders.ts grava DONE ou ERROR.
+// Não há estado intermediário — o processador não marca PROCESSING.
+export type OrderAutomationStatus = "PENDING" | "DONE" | "ERROR" | null;
 
 export type OrderMonitorItem = {
   id: string;
@@ -21,7 +24,9 @@ export type OrderMonitorOrder = {
   notes?: string | null;
   totalWeightKg?: number | null;
   pricingTable?: "varejo" | "atacado" | null;
-  saibwebStatus?: OrderAutomationStatus;
-  saibwebError?: string | null;
+  erpStatus?: OrderAutomationStatus;
+  erpError?: string | null;
+  erpExternalId?: string | null;
+  erpNotaFiscal?: string | null;
   isLive?: boolean;
 };

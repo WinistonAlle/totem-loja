@@ -338,7 +338,7 @@ export default function OrderMonitorPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Reenviar para automacao?</AlertDialogTitle>
             <AlertDialogDescription>
-              Isso vai recolocar o pedido em fila para uma nova tentativa de digitacao no SAIBWEB.
+              Isso vai recolocar o pedido em fila para uma nova tentativa de lancamento no CIGAM.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

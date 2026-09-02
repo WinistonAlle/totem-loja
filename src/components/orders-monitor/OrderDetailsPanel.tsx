@@ -139,15 +139,15 @@ function OrderDetailsBody({
             </div>
           </section>
 
-          {order.saibwebStatus === "ERROR" ? (
+          {order.erpStatus === "ERROR" ? (
             <section className="rounded-[28px] border border-rose-200 bg-rose-50/80 p-5 text-rose-900">
               <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-rose-500">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 Atencao
               </p>
               <p className="mt-3 text-sm leading-6">
-                Esse pedido registrou falha na automacao. Use o reenvio manual apenas se tiver certeza de que o pedido
-                nao foi digitado corretamente no SAIBWEB.
+                Esse pedido nao foi lancado no CIGAM. Use o reenvio manual apenas se tiver certeza de que ele nao
+                entrou no ERP — se ja existir pedido la, reenviar cria um duplicado.
               </p>
             </section>
           ) : null}
