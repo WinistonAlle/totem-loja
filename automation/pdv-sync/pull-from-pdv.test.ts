@@ -17,10 +17,11 @@ function makeTotemSupabase() {
 }
 
 describe("reconcilePaidOrders", () => {
-  it("fecha no totem o pedido correspondente a uma venda do PDV com totem_order_number preenchido", async () => {
+  it("fecha no totem usando o numero do CIGAM (erp_external_id), nao o order_number interno do PDV", async () => {
     const venda = {
       totem_order_number: "GM-20260903-000001",
-      order_number: "1234",
+      order_number: "PDV-1756900000-abc12345",
+      erp_external_id: "015046",
       nota_fiscal: "56789"
     };
     const pdv = makePdvSupabase([venda]);
@@ -31,19 +32,36 @@ describe("reconcilePaidOrders", () => {
     expect(resultado).toEqual({ fechados: 1, erros: 0 });
 
     expect(pdv.from).toHaveBeenCalledWith("orders");
-    expect(pdv.select).toHaveBeenCalledWith("totem_order_number, order_number, nota_fiscal");
+    expect(pdv.select).toHaveBeenCalledWith("totem_order_number, order_number, erp_external_id, nota_fiscal");
     expect(pdv.not).toHaveBeenCalledWith("totem_order_number", "is", null);
 
     expect(totem.from).toHaveBeenCalledWith("orders");
     expect(totem.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        pdv_order_number: "1234",
+        pdv_order_number: "015046",
         pdv_nota_fiscal: "56789",
         paid_at: expect.any(String)
       })
     );
     expect(totem.eq).toHaveBeenCalledWith("order_number", "GM-20260903-000001");
     expect(totem.is).toHaveBeenCalledWith("paid_at", null);
+  });
+
+  it("usa order_number do PDV como reserva quando o CIGAM ainda não devolveu número", async () => {
+    const venda = {
+      totem_order_number: "GM-20260903-000004",
+      order_number: "PDV-1756900001-def67890",
+      erp_external_id: null,
+      nota_fiscal: null
+    };
+    const pdv = makePdvSupabase([venda]);
+    const totem = makeTotemSupabase();
+
+    await reconcilePaidOrders(totem.client, pdv.client);
+
+    expect(totem.update).toHaveBeenCalledWith(
+      expect.objectContaining({ pdv_order_number: "PDV-1756900001-def67890" })
+    );
   });
 
   it("retorna {fechados: 0, erros: 0} e não chama update quando não há vendas no PDV", async () => {
@@ -59,7 +77,8 @@ describe("reconcilePaidOrders", () => {
   it("conta erro e continua quando o update no totem falha, sem lançar exceção", async () => {
     const venda = {
       totem_order_number: "GM-20260903-000002",
-      order_number: "9999",
+      order_number: "PDV-1756900002-ghi11111",
+      erp_external_id: "015050",
       nota_fiscal: null
     };
     const pdv = makePdvSupabase([venda]);
