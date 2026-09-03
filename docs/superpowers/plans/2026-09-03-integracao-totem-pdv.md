@@ -29,7 +29,7 @@
 ## Mapa de arquivos
 
 **totem-loja** (`~/apps/totem-loja`):
-- `supabase/migrations/<timestamp>_add_pdv_sync_columns.sql` — cria: `orders.pdv_sync_status`, `orders.pdv_synced_at`, `orders.pdv_order_number`, `orders.pdv_nota_fiscal`, `orders.paid_at`.
+- `supabase/migrations/2026-09-03-pdv-sync-columns.sql` — cria: `orders.pdv_sync_status`, `orders.pdv_synced_at`, `orders.pdv_order_number`, `orders.pdv_nota_fiscal`, `orders.paid_at`.
 - `automation/pdv-sync/push-to-pdv.ts` — novo: lê pedidos totem sem `pdv_sync_status`, escreve em `pedidos_totem` no Supabase do PDV.
 - `automation/pdv-sync/pull-from-pdv.ts` — novo: lê `orders` do PDV por `totem_order_number`, fecha o pedido no totem.
 - `automation/pdv-sync/sync-loop.ts` — novo: laço que chama os dois acima a cada N segundos (substitui `automation/cigam-sync-service.ts` no pm2).
@@ -38,7 +38,7 @@
 - `ecosystem.config.cjs` — remove app `totem-loja-cigam`, adiciona `totem-pdv-sync`.
 
 **pdv-gm** (`~/apps/pdv-gm`):
-- `server/supabase/migrations/<timestamp>_pedidos_totem.sql` — cria tabela `pedidos_totem` + coluna `orders.totem_order_number`.
+- `server/supabase/migrations/0020_pedidos_totem.sql` — cria tabela `pedidos_totem` + coluna `orders.totem_order_number`.
 - `server/src/orders/totemOrderService.ts` — novo: `listTotemOrders`, `deleteTotemOrder` (espelha `preOrderService.ts`).
 - `server/src/orders/totemOrderService.test.ts` — novo.
 - `server/src/routes/api.ts` — adiciona `GET /totem-orders`, `DELETE /totem-orders/:id`; adiciona `totemOrderNumber` em `NewOrderInput`.
@@ -58,12 +58,12 @@
 ## Task 1: Migration no totem — colunas de sync com o PDV
 
 **Files:**
-- Create: `~/apps/totem-loja/supabase/migrations/20260903120000_add_pdv_sync_columns.sql`
+- Create: `~/apps/totem-loja/supabase/migrations/2026-09-03-pdv-sync-columns.sql` (o repo nomeia migrations por data, ex. `2026-08-20-cigam-integration.sql` — conferir com `ls ~/apps/totem-loja/supabase/migrations/` antes de criar o arquivo e seguir esse padrão, não o de timestamp)
 
 - [ ] **Step 1: Escrever a migration**
 
 ```sql
--- 20260903120000_add_pdv_sync_columns.sql
+-- 2026-09-03-pdv-sync-columns.sql
 -- Substitui o fluxo antigo (totem cria rascunho no CIGAM) por: totem empurra
 -- o pedido pro PDV, PDV vende de verdade e o totem só registra o resultado.
 
@@ -97,7 +97,7 @@ Esperado: 6 linhas (`pdv_sync_status`, `pdv_sync_error`, `pdv_synced_at`, `pdv_o
 
 ```bash
 cd ~/apps/totem-loja
-git add supabase/migrations/20260903120000_add_pdv_sync_columns.sql
+git add supabase/migrations/2026-09-03-pdv-sync-columns.sql
 git commit -m "feat: colunas de sincronismo com o PDV na tabela orders"
 ```
 
@@ -106,14 +106,14 @@ git commit -m "feat: colunas de sincronismo com o PDV na tabela orders"
 ## Task 2: Migration no PDV — tabela `pedidos_totem` + coluna de referência
 
 **Files:**
-- Create: `~/apps/pdv-gm/server/supabase/migrations/20260903121000_pedidos_totem.sql`
+- Create: `~/apps/pdv-gm/server/supabase/migrations/0020_pedidos_totem.sql` (o repo numera migrations sequencialmente, `0001` a `0019` hoje — conferir com `ls ~/apps/pdv-gm/server/supabase/migrations/` antes de criar, e usar o próximo número livre; se já existir `0020` quando este Task rodar, usar `0021`)
 
 - [ ] **Step 1: Escrever a migration**
 
 Espelha `pedidos_pre_digitados` (mesmo `items_json`), mas sem `cashier_id`/`cashier_name` (o pedido não foi adiantado por nenhum operador) e com a referência de volta pro totem:
 
 ```sql
--- 20260903121000_pedidos_totem.sql
+-- 0020_pedidos_totem.sql
 create table if not exists public.pedidos_totem (
   id uuid primary key default gen_random_uuid(),
   totem_order_id uuid not null unique,
@@ -160,7 +160,7 @@ Esperado: 1 linha em cada.
 
 ```bash
 cd ~/apps/pdv-gm
-git add server/supabase/migrations/20260903121000_pedidos_totem.sql
+git add server/supabase/migrations/0020_pedidos_totem.sql
 git commit -m "feat: tabela pedidos_totem e coluna orders.totem_order_number"
 ```
 
