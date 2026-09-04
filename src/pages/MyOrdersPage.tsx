@@ -146,6 +146,9 @@ type OrderItem = {
 type Order = {
   id: string;
   order_number: string | null;
+  customer_name: string | null;
+  paid_at: string | null;
+  pdv_order_number: string | null;
   total_items: number | null;
   total_value: number | null;
   status: string | null;
@@ -331,7 +334,7 @@ const MyOrdersPage: React.FC = () => {
   const fetchOrdersFallback = useCallback(async (docParam: string) => {
     const { data: ordersRows, error: oErr } = await supabase
       .from("orders")
-      .select("id, order_number, status, created_at, total_items, total_value")
+      .select("id, order_number, customer_name, paid_at, pdv_order_number, status, created_at, total_items, total_value")
       .eq("customer_document", docParam)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -370,6 +373,9 @@ const MyOrdersPage: React.FC = () => {
     return oList.map((r: any) => ({
       id: String(r.id),
       order_number: r.order_number ?? null,
+      customer_name: r.customer_name ?? null,
+      paid_at: r.paid_at ?? null,
+      pdv_order_number: r.pdv_order_number ?? null,
       total_items: r.total_items ?? null,
       total_value: r.total_value ?? null,
       status: r.status ?? null,
@@ -399,6 +405,9 @@ const MyOrdersPage: React.FC = () => {
         const mapped: Order[] = rows.map((r: any) => ({
           id: String(r.id),
           order_number: r.order_number ?? null,
+          customer_name: r.customer_name ?? null,
+          paid_at: r.paid_at ?? null,
+          pdv_order_number: r.pdv_order_number ?? null,
           total_items: r.total_items ?? null,
           total_value: r.total_value ?? null,
           status: r.status ?? null,
@@ -859,6 +868,11 @@ const MyOrdersPage: React.FC = () => {
                         <div key={order.id} className="rounded-[24px] sm:rounded-[26px] border border-gray-200 bg-white shadow-sm p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
+                              {order.customer_name && (
+                                <div className="text-[13px] font-extrabold text-gray-500 leading-tight truncate">
+                                  {order.customer_name}
+                                </div>
+                              )}
                               <div className="text-[15px] sm:text-[16px] font-extrabold text-gray-900 leading-tight">
                                 {dateTime}
                               </div>
@@ -872,9 +886,17 @@ const MyOrdersPage: React.FC = () => {
                               <div className="text-[12px] font-extrabold text-gray-500 text-right">
                                 {order.status ? String(order.status) : "—"}
                               </div>
-                              {order.order_number && (
+                              {/* Numero que aparece pro cliente tem que ser o
+                                  do CIGAM (pdv_order_number, preenchido so
+                                  quando o caixa do PDV ja cobrou), nunca o
+                                  interno GM-AAAAMMDD-#### -- ver memoria
+                                  feedback_numero_pedido_cigam. Antes do
+                                  pagamento nao existe numero nenhum ainda,
+                                  entao nao mostra nada em vez de mostrar o
+                                  interno. */}
+                              {order.pdv_order_number && (
                                 <div className="text-[11px] text-gray-500 font-semibold text-right">
-                                  #{order.order_number}
+                                  Pedido {order.pdv_order_number}
                                 </div>
                               )}
                             </div>
