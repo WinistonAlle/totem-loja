@@ -26,7 +26,6 @@ const Index = lazy(() => import("./pages/Index"));
 const Checkout = lazy(() => import("./pages/Checkout"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const Start = lazy(() => import("./pages/Start"));
-const ContextoCompra = lazy(() => import("./pages/ContextoCompra"));
 const Avisos = lazy(() => import("./pages/Avisos"));
 const FavoritesPage = lazy(() => import("./pages/Favorites"));
 const Destaques = lazy(() => import("./pages/Destaques"));
@@ -415,7 +414,6 @@ function AppRoutes() {
 
           {/* ✅ fluxo do totem */}
           <Route path="/inicio" element={<Start />} />
-          <Route path="/contexto" element={<ContextoCompra />} />
 
           {/* ✅ catálogo NÃO exige login (login/cadastro ficam como opção dentro dele) */}
           <Route path="/catalogo" element={<Index />} />

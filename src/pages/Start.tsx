@@ -543,7 +543,6 @@ export default function Start() {
 
   useEffect(() => {
     const warmNextRoutes = () => {
-      void import("./ContextoCompra");
       void import("./Index");
     };
 
@@ -580,7 +579,7 @@ export default function Start() {
       clearCustomerSession();
       emitAppEvent(APP_EVENT.pricingContextChanged);
     } catch {}
-    navigate("/contexto");
+    navigate("/catalogo");
   }
 
   function handleLogoTap() {

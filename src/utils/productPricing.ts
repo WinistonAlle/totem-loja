@@ -128,10 +128,51 @@ export function getChannelBasePrice(product: any, channel: ChannelType = "varejo
   ) ?? 0;
 }
 
-export function resolveProductPrice(product: any, ctx?: PricingContextLike): number {
-  const exact = getExactContextPrice(product, ctx ?? null);
+/**
+ * Categorias vendidas por pacote onde o atacado é decidido por CONTAGEM de
+ * pacotes, não por peso — regra da loja (confirmada com o dono em
+ * 2026-09-04): salgados fritos/assados viram atacado a partir de 10
+ * pacotes. Qualquer outra categoria usa peso (ver WEIGHT_ATACADO_THRESHOLD_KG).
+ */
+const PACKAGE_COUNT_ATACADO_CATEGORIES = new Set(["Salgados P/ Fritar", "Salgados Assados"]);
+
+export const PACKAGE_COUNT_ATACADO_THRESHOLD = 10;
+export const WEIGHT_ATACADO_THRESHOLD_KG = 10;
+
+/**
+ * Decide o canal (varejo/atacado) de UM item, pela quantidade DAQUELE
+ * produto no carrinho — não existe mais uma escolha manual e global de
+ * "atacado" pro pedido inteiro (ver ContextoCompra, removida em 2026-09-04).
+ * Cada linha do carrinho é avaliada sozinha: 5 coxinhas + 5 risoles
+ * continuam os dois em varejo, só quem sozinho passar do limite muda.
+ */
+export function resolveLineChannel(product: any, quantity: number): ChannelType {
+  const source = getPricingSource(product);
+  const qty = Number(quantity);
+  if (!Number.isFinite(qty) || qty <= 0) return "varejo";
+
+  const category = String(source?.category ?? "").trim();
+  if (PACKAGE_COUNT_ATACADO_CATEGORIES.has(category)) {
+    return qty >= PACKAGE_COUNT_ATACADO_THRESHOLD ? "atacado" : "varejo";
+  }
+
+  const weight = toNumber(source?.weight ?? source?.weight_kg ?? source?.weightKg) ?? 0;
+  const totalKg = weight * qty;
+  return totalKg >= WEIGHT_ATACADO_THRESHOLD_KG ? "atacado" : "varejo";
+}
+
+/**
+ * Preço de UM item pela quantidade dele no carrinho — substitui o antigo
+ * fluxo de "contexto de compra" escolhido manualmente na tela inicial.
+ * customerType default "cpf": o totem ainda não coleta CPF/CNPJ do cliente
+ * (fica pra uma etapa futura), então usa sempre a coluna de pessoa física.
+ */
+export function resolveProductPrice(product: any, quantity: number, customerType: CustomerType = "cpf"): number {
+  const channel = resolveLineChannel(product, quantity);
+  const ctx: PricingContextLike = { customer_type: customerType, channel };
+
+  const exact = getExactContextPrice(product, ctx);
   if (exact != null) return exact;
 
-  const channel = ctx?.channel === "atacado" ? "atacado" : "varejo";
   return getChannelBasePrice(product, channel);
 }

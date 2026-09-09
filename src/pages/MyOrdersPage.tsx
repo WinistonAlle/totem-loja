@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 
 import CartToggle from "@/components/CartToggle";
 import Cart from "@/components/Cart";
-import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
+import { getChannelBasePrice } from "@/utils/productPricing";
 import { applyStoredWeightsToProducts } from "@/utils/productWeights";
 import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
@@ -90,46 +90,6 @@ function toNumber(value: unknown, fallback = 0): number {
     return Number.isFinite(n) ? n : fallback;
   }
   return fallback;
-}
-
-/* --------------------------------------------------------
-   PRICING CONTEXT (tabela escolhida no questionário)
--------------------------------------------------------- */
-type PricingCustomerType = "cpf" | "cnpj";
-type PricingChannelType = "varejo" | "atacado";
-
-type PricingContext = {
-  customer_type: PricingCustomerType | null;
-  channel: PricingChannelType | null;
-  price_table: string | null;
-};
-
-function safeGetPricingContextNow(): PricingContext {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return { customer_type: null, channel: null, price_table: null };
-    const p = JSON.parse(raw);
-
-    const ct = p?.customer_type;
-    const ch = p?.channel;
-
-    const okCt = ct === "cpf" || ct === "cnpj";
-    const okCh = ch === "varejo" || ch === "atacado";
-
-    const pt = typeof p?.price_table === "string" ? String(p.price_table).trim() : null;
-
-    return {
-      customer_type: okCt ? ct : null,
-      channel: okCh ? ch : null,
-      price_table: pt && pt.length ? pt : null,
-    };
-  } catch {
-    return { customer_type: null, channel: null, price_table: null };
-  }
-}
-
-function pickPriceByContext(product: Product, ctx: PricingContext): number {
-  return resolveProductPrice(product, ctx);
 }
 
 /* --------------------------------------------------------
@@ -457,8 +417,6 @@ const MyOrdersPage: React.FC = () => {
     try {
       setRefazendoId(order.id);
 
-      const pricingCtx = safeGetPricingContextNow();
-
       const rows = (order.order_items ?? []) as any[];
       if (!rows.length) {
         alert("Esse pedido não tem itens para refazer.");
@@ -531,15 +489,10 @@ const MyOrdersPage: React.FC = () => {
           continue;
         }
 
-        const chosenPrice = pickPriceByContext(product, pricingCtx);
-
-        const pricedProduct: Product = {
-          ...(product as any),
-          price: chosenPrice,
-          employee_price: chosenPrice,
-        } as Product;
-
-        toAdd.push({ product: pricedProduct, quantity: qty });
+        // O CartContext recalcula o preço internamente pela quantidade
+        // resultante (ver addMultipleToCart) — não precisa pré-precificar
+        // aqui.
+        toAdd.push({ product, quantity: qty });
       }
 
       if (toAdd.length === 0) {
