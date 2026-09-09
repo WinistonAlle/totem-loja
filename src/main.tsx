@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
+import { watchServiceWorkerTakeover } from "@/utils/appRecovery";
 
 if (import.meta.env.DEV && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -9,6 +10,10 @@ if (import.meta.env.DEV && "serviceWorker" in navigator) {
       .then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())))
       .catch(() => {});
   });
+}
+
+if (!import.meta.env.DEV) {
+  watchServiceWorkerTakeover();
 }
 
 createRoot(document.getElementById("root")!).render(<App />);

@@ -86,3 +86,40 @@ export async function recoverFromStaleBuild(): Promise<boolean> {
   await new Promise(() => {});
   return true;
 }
+
+/**
+ * Se a aba ja abriu com um service worker no controle. Precisa ser lido no load,
+ * antes de qualquer troca: sem isso nao da pra distinguir "primeiro controller
+ * da sessao" (normal) de "build novo assumindo a aba" (o que exige reload).
+ */
+const tinhaControllerNoLoad =
+  typeof navigator !== "undefined" &&
+  "serviceWorker" in navigator &&
+  Boolean(navigator.serviceWorker.controller);
+
+/**
+ * Recarrega a aba quando um service worker novo assume o controle.
+ *
+ * O plugin de PWA gera um registerSW.js que so registra, sem nenhum reload. Com
+ * skipWaiting + clientsClaim + cleanupOutdatedCaches, um service worker novo
+ * assume a aba aberta e apaga o cache antigo NO MEIO da sessao, sem recarregar
+ * nada. A aba continua rodando o JS velho, com os nomes de chunk que acabaram de
+ * sumir: e o proprio update que arma a bomba. No totem, que fica dias sem ser
+ * recarregado, isso vira a tela de erro na primeira rota lazy que faltar.
+ *
+ * Recarregar aqui e mais barato que quebrar: o carrinho e o nome do cliente
+ * vivem no localStorage e sobrevivem ao reload, e a rota atual e a mesma.
+ */
+export function watchServiceWorkerTakeover() {
+  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // Primeiro controller da sessao (aba que abriu sem SW): nao e troca de
+    // build, nao precisa recarregar.
+    if (!tinhaControllerNoLoad) return;
+    if (!canRecoverNow()) return;
+
+    markRecovery();
+    window.location.reload();
+  });
+}
