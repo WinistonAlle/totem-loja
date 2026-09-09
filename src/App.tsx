@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -7,6 +7,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
+import { lazyRoute } from "@/utils/lazyRoute";
 import { APP_EVENT, emitAppEvent, subscribeAppEvent } from "@/lib/appEvents";
 import { recordSystemEvent } from "@/lib/systemEvents";
 import {
@@ -20,20 +21,20 @@ import { useCart } from "@/contexts/CartContext";
 import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
 import { supabase } from "@/lib/supabase";
 
-const Login = lazy(() => import("./pages/Login"));
-const Cadastro = lazy(() => import("./pages/Cadastro"));
-const Index = lazy(() => import("./pages/Index"));
-const Checkout = lazy(() => import("./pages/Checkout"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const Start = lazy(() => import("./pages/Start"));
-const Avisos = lazy(() => import("./pages/Avisos"));
-const FavoritesPage = lazy(() => import("./pages/Favorites"));
-const Destaques = lazy(() => import("./pages/Destaques"));
-const Admin = lazy(() => import("./pages/Admin"));
-const ReportsDashboard = lazy(() => import("./pages/ReportsDashboard"));
-const AdminOrders = lazy(() => import("./pages/AdminOrders"));
-const SystemDiagnostics = lazy(() => import("./pages/SystemDiagnostics"));
-const OrderMonitorPage = lazy(() => import("./pages/OrderMonitorPage"));
+const Login = lazyRoute(() => import("./pages/Login"));
+const Cadastro = lazyRoute(() => import("./pages/Cadastro"));
+const Index = lazyRoute(() => import("./pages/Index"));
+const Checkout = lazyRoute(() => import("./pages/Checkout"));
+const NotFound = lazyRoute(() => import("./pages/NotFound"));
+const Start = lazyRoute(() => import("./pages/Start"));
+const Avisos = lazyRoute(() => import("./pages/Avisos"));
+const FavoritesPage = lazyRoute(() => import("./pages/Favorites"));
+const Destaques = lazyRoute(() => import("./pages/Destaques"));
+const Admin = lazyRoute(() => import("./pages/Admin"));
+const ReportsDashboard = lazyRoute(() => import("./pages/ReportsDashboard"));
+const AdminOrders = lazyRoute(() => import("./pages/AdminOrders"));
+const SystemDiagnostics = lazyRoute(() => import("./pages/SystemDiagnostics"));
+const OrderMonitorPage = lazyRoute(() => import("./pages/OrderMonitorPage"));
 
 const queryClient = new QueryClient();
 
