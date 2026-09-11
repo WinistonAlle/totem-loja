@@ -5,12 +5,8 @@ import { FREE_SHIPPING_THRESHOLD } from "../data/shipping";
 import { APP_EVENT, subscribeAppEvent } from "@/lib/appEvents";
 import { MIN_PACKAGES, MIN_WEIGHT_KG } from "@/data/products";
 import { resolveProductPrice } from "@/utils/productPricing";
-import { getPricingContext } from "@/utils/pricingContext";
 import { getCustomerSessionSnapshotOrNull } from "@/utils/customerSession";
 import { getProductImages, getProductWeight, stampProductPrice, toBool, toNumber } from "@/utils/productData";
-
-type CustomerType = "cpf" | "cnpj";
-type ChannelType = "varejo" | "atacado";
 
 interface CartContextType {
   cartItems: CartItem[];
@@ -38,6 +34,9 @@ interface CartContextType {
   animateCartIcon: number;
   showFreeShippingAnimation: boolean;
 
+  /** Recalcula o preço de cada item pela própria quantidade dele — chame
+   *  depois de qualquer mudança que não passe pelos setters daqui (ex:
+   *  carregar o carrinho salvo do storage). */
   repriceCartFromPricingContext: () => void;
 }
 
@@ -65,14 +64,6 @@ function normalizeProduct(raw: any): Product {
 
 /* ===================== assinatura do cliente atual ===================== */
 
-function safeParseJSON(raw: string) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
-  }
-}
-
 function getCustomerSignature(): string {
   const parsed = getCustomerSessionSnapshotOrNull<any>();
   const doc =
@@ -89,8 +80,14 @@ function getCustomerSignature(): string {
   return "anon";
 }
 
-function resolvePriceForProduct(product: any, ctx: { customer_type: CustomerType; channel: ChannelType } | null) {
-  return resolveProductPrice(product, ctx);
+/**
+ * Preço de UM item pela QUANTIDADE dele — não existe mais canal global
+ * (varejo/atacado escolhido na tela inicial): cada produto vira atacado
+ * sozinho, pela própria quantidade no carrinho (ver resolveLineChannel em
+ * productPricing.ts).
+ */
+function resolvePriceForProduct(product: any, quantity: number) {
+  return resolveProductPrice(product, quantity);
 }
 
 function stampPrice(product: any, price: number) {
@@ -216,30 +213,16 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
   /* ===================== ✅ REPRECIFICAÇÃO ===================== */
 
   const repriceCartFromPricingContext = useCallback(() => {
-    const ctx = getPricingContext();
-
     setCartItems((prev) =>
       prev.map((item) => {
         const p = normalizeProduct(item.product);
-        const nextPrice = resolvePriceForProduct(p, ctx);
+        const qty = toNumber(item.quantity, 0);
+        const nextPrice = resolvePriceForProduct(p, qty);
         const nextProduct = stampPrice(p, nextPrice);
         return { ...item, product: nextProduct };
       })
     );
   }, []);
-
-  useEffect(() => {
-    const onPricing = () => repriceCartFromPricingContext();
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "pricing_context") onPricing();
-    };
-    const unsubscribe = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("storage", onStorage);
-    };
-  }, [repriceCartFromPricingContext]);
 
   /* ===================== totais ===================== */
 
@@ -282,48 +265,50 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   /* ===================== ações ===================== */
 
+  // Cada ação que muda quantidade repreça a linha pela quantidade RESULTANTE
+  // — não pela quantidade sendo adicionada/removida sozinha. É o que faz um
+  // pedido que já tinha 8 pacotes e ganha +2 virar atacado nos 10, em vez de
+  // só o próximo pacote entrar com preço diferente do resto da linha.
+
   const addToCart = useCallback((product: Product, quantity: number = 1) => {
     const p0 = normalizeProduct(product);
-
-    const ctx = getPricingContext();
-    const pr = resolvePriceForProduct(p0, ctx);
-    const p = stampPrice(p0, pr);
-
     const qtyToAdd = Math.max(1, Math.floor(toNumber(quantity, 1)));
 
     setCartItems((prevItems) => {
-      const existingItem = prevItems.find((item) => item.product.id === p.id);
+      const existingItem = prevItems.find((item) => item.product.id === p0.id);
+      const resultingQty = toNumber(existingItem?.quantity, 0) + qtyToAdd;
+      const price = resolvePriceForProduct(p0, resultingQty);
+      const p = stampPrice(p0, price);
 
       if (existingItem) {
         return prevItems.map((item) =>
-          item.product.id === p.id ? { ...item, quantity: toNumber(item.quantity, 0) + qtyToAdd } : item
+          item.product.id === p.id ? { ...item, product: p, quantity: resultingQty } : item
         );
       }
 
-      return [...prevItems, { product: p, quantity: qtyToAdd }];
+      return [...prevItems, { product: p, quantity: resultingQty }];
     });
 
     setAnimateCartIcon((prev) => prev + 1);
   }, []);
 
   const addMultipleToCart = useCallback((products: { product: Product; quantity: number }[]) => {
-    const ctx = getPricingContext();
-
     setCartItems((prevItems) => {
       const newItems = [...prevItems];
 
       products.forEach(({ product, quantity }) => {
         const p0 = normalizeProduct(product);
-        const pr = resolvePriceForProduct(p0, ctx);
-        const p = stampPrice(p0, pr);
-
         const qtyToAdd = Math.max(1, Math.floor(toNumber(quantity, 1)));
 
-        const idx = newItems.findIndex((item) => item.product.id === p.id);
+        const idx = newItems.findIndex((item) => item.product.id === p0.id);
+        const resultingQty = (idx >= 0 ? toNumber(newItems[idx].quantity, 0) : 0) + qtyToAdd;
+        const price = resolvePriceForProduct(p0, resultingQty);
+        const p = stampPrice(p0, price);
+
         if (idx >= 0) {
-          newItems[idx].quantity = toNumber(newItems[idx].quantity, 0) + qtyToAdd;
+          newItems[idx] = { ...newItems[idx], product: p, quantity: resultingQty };
         } else {
-          newItems.push({ product: p, quantity: qtyToAdd });
+          newItems.push({ product: p, quantity: resultingQty });
         }
       });
 
@@ -342,8 +327,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
           const currentQty = toNumber(item.quantity, 0);
           const newQty = Math.max(0, currentQty - 1);
+          if (newQty === 0) return null;
 
-          return newQty === 0 ? null : { ...item, quantity: newQty };
+          const price = resolvePriceForProduct(item.product, newQty);
+          const p = stampPrice(item.product, price);
+          return { ...item, product: p, quantity: newQty };
         })
         .filter(Boolean) as CartItem[];
     });
@@ -361,7 +349,12 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     setCartItems((prevItems) =>
-      prevItems.map((item) => (item.product.id === productId ? { ...item, quantity: q } : item))
+      prevItems.map((item) => {
+        if (item.product.id !== productId) return item;
+        const price = resolvePriceForProduct(item.product, q);
+        const p = stampPrice(item.product, price);
+        return { ...item, product: p, quantity: q };
+      })
     );
   }, [removeFromCart]);
 

@@ -1,10 +1,8 @@
 // src/services/orders.ts
 import { supabase } from "@/lib/supabase";
-import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
-import { getPricingContext } from "@/utils/pricingContext";
+import { resolveProductPrice } from "@/utils/productPricing";
 import { loadStoredWeightMap } from "@/utils/productWeights";
 import { recordSystemEvent } from "@/lib/systemEvents";
-import { WHOLESALE_WEIGHT_THRESHOLD_KG, getOrderTotalWeightKg, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 type OrderItemInput = {
   product: any;
@@ -21,8 +19,6 @@ type CreateOrderInput = {
 };
 
 const REQUIRE_ORDER_RPC = String(import.meta.env.VITE_REQUIRE_ORDER_RPC ?? "").toLowerCase() === "true";
-
-type ChannelType = "varejo" | "atacado";
 
 type ProductRow = {
   id: string;
@@ -109,32 +105,18 @@ function parsePositiveQuantity(quantity: number): number {
   return parsed;
 }
 
-function inferPricingChannel(paymentMethod: string): ChannelType {
-  return paymentMethod.toLowerCase().includes("atacado") ? "atacado" : "varejo";
-}
-
-function getAuthoritativePricingContext(channel: ChannelType) {
-  const ctx = getPricingContext();
-  if (ctx?.channel === channel) {
-    return {
-      customer_type: ctx.customer_type,
-      channel: ctx.channel,
-    };
-  }
-
-  return {
-    customer_type: channel === "atacado" ? "cnpj" : "cpf",
-    channel,
-  } as const;
-}
-
-function getAuthoritativeUnitPriceCents(product: ProductRow, channel: ChannelType): number {
-  const pricingContext = getAuthoritativePricingContext(channel);
-  const chosen = resolveProductPrice(product, pricingContext) || getChannelBasePrice(product, channel);
+/**
+ * Preço autoritativo de UM item, pela quantidade dele — o canal
+ * (varejo/atacado) não é mais escolhido manualmente pro pedido inteiro,
+ * cada item vira atacado sozinho pela própria quantidade (ver
+ * resolveLineChannel em productPricing.ts).
+ */
+function getAuthoritativeUnitPriceCents(product: ProductRow, quantity: number): number {
+  const chosen = resolveProductPrice(product, quantity);
   const cents = toCents(chosen);
 
   if (cents <= 0) {
-    throw new Error(`Produto sem preço válido para o canal ${channel}.`);
+    throw new Error(`Produto sem preço válido: ${product?.name ?? product?.id ?? "desconhecido"}.`);
   }
 
   return cents;
@@ -188,14 +170,10 @@ async function tryCreateOrderViaRpc(input: CreateOrderInput): Promise<CreateOrde
   const customerDocument = (input.customerDocument ?? "").toString().trim();
   const customerName = (input.customerName ?? "").toString().trim();
   const paymentMethod = input.paymentMethod ?? "attendant";
-  const pricingChannel = inferPricingChannel(paymentMethod);
 
   if (!customerDocument) throw new Error("customerDocument vazio.");
   if (!customerName) throw new Error("customerName vazio.");
   if (!input.items?.length) throw new Error("Pedido sem itens.");
-  if (pricingChannel === "atacado" && !hasWholesaleAccess(getOrderTotalWeightKg(input.items))) {
-    throw new Error(`O atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`);
-  }
 
   const payloadItems = input.items.map(({ product, quantity }) => ({
     product_id: String(product?.id ?? ""),
@@ -259,14 +237,10 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
   const customerDocument = (input.customerDocument ?? "").toString().trim();
   const customerName = (input.customerName ?? "").toString().trim();
   const paymentMethod = input.paymentMethod ?? "attendant";
-  const pricingChannel = inferPricingChannel(paymentMethod);
 
   if (!customerDocument) throw new Error("customerDocument vazio.");
   if (!customerName) throw new Error("customerName vazio.");
   if (!input.items?.length) throw new Error("Pedido sem itens.");
-  if (pricingChannel === "atacado" && !hasWholesaleAccess(getOrderTotalWeightKg(input.items))) {
-    throw new Error(`O atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`);
-  }
 
   const authoritativeProducts = await loadAuthoritativeProducts(
     input.items.map(({ product }) => String(product?.id ?? ""))
@@ -280,7 +254,7 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
     }
 
     const safeQuantity = parsePositiveQuantity(quantity);
-    const unitPriceCents = getAuthoritativeUnitPriceCents(authoritativeProduct, pricingChannel);
+    const unitPriceCents = getAuthoritativeUnitPriceCents(authoritativeProduct, safeQuantity);
 
     return {
       order_id: "",
@@ -350,7 +324,6 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
       orderId,
       orderNumber,
       items: rows.length,
-      pricingChannel,
     },
   });
 

@@ -8,22 +8,8 @@ import { Minus, Plus } from "lucide-react";
 import ProductImageCarousel from "./ProductImageCarousel";
 import { toast } from "./ui/sonner";
 import ProductRetailModal from "@/components/ProductRetailModal";
-import { resolveProductPrice as resolvePricingValue } from "@/utils/productPricing";
-import { getPricingContext } from "@/utils/pricingContext";
+import { resolveProductPrice } from "@/utils/productPricing";
 import { getProductImages, getProductUnitPrice, getProductWeight, stampProductPrice } from "@/utils/productData";
-
-/* --------------------------------------------------------
-   PRICING CONTEXT (CPF/CNPJ + ATACADO/VAREJO)
--------------------------------------------------------- */
-type CustomerType = "cpf" | "cnpj";
-type ChannelType = "varejo" | "atacado";
-
-function resolveProductPrice(
-  product: any,
-  ctx: { customer_type: CustomerType; channel: ChannelType } | null
-): number {
-  return resolvePricingValue(product, ctx);
-}
 
 interface ProductCardProps {
   product: Product;
@@ -40,20 +26,26 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, hideImages = false }
 
   // ✅ Modal Retail (detalhado)
   const [isRetailOpen, setIsRetailOpen] = useState(false);
-  const ctx = getPricingContext();
-
-  // ✅ preço conforme contexto (cpf/cnpj + atacado/varejo)
-  const price = useMemo(() => resolveProductPrice(product, ctx), [product, ctx]);
-
-  // ✅ Produto “com preço carimbado” (cart)
-  const pricedProduct: Product = useMemo(() => {
-    return stampProductPrice(product as unknown as Record<string, unknown>, price) as Product;
-  }, [product, price]);
 
   const isAvailable = product.inStock !== false;
 
   const currentItem = cartItems.find((item) => String(item.product.id) === String(product.id));
   const quantity = currentItem?.quantity || 0;
+
+  // ✅ preço pela quantidade: se já está no carrinho, mostra o preço da
+  // linha (pode já estar em atacado); se ainda não foi adicionado, mostra o
+  // preço de 1 unidade (sempre varejo — ver resolveLineChannel).
+  const price = useMemo(
+    () => resolveProductPrice(product, quantity > 0 ? quantity : 1),
+    [product, quantity]
+  );
+
+  // ✅ Produto “com preço carimbado” (cart) — o CartContext recalcula o
+  // preço de novo internamente pela quantidade resultante, então isso aqui
+  // só precisa carregar os dados do produto até lá.
+  const pricedProduct: Product = useMemo(() => {
+    return stampProductPrice(product as unknown as Record<string, unknown>, price) as Product;
+  }, [product, price]);
 
   const stop = (e: any) => {
     e?.preventDefault?.();

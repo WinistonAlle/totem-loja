@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
@@ -8,8 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const outputDir = path.join(rootDir, "output", "playwright");
-const scenario = process.env.SMOKE_TOTEM_SCENARIO?.trim() || "success";
-const previewPort = Number(process.env.SMOKE_TOTEM_PORT || 4175);
+const previewPort = Number(process.env.SMOKE_TOTEM_PORT || 4179);
 
 const sampleProducts = [
   {
@@ -93,11 +93,30 @@ async function startPreviewServer() {
 
   const baseUrl = `http://127.0.0.1:${previewPort}`;
 
+  let saiuCedo = false;
+  child.on("exit", () => {
+    saiuCedo = true;
+  });
+
   try {
     await waitForServer(baseUrl);
   } catch (error) {
     child.kill("SIGTERM");
     throw new Error(`Falha ao iniciar vite preview.\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`);
+  }
+
+  // Uma porta ocupada por OUTRO app responde 200 igual e o smoke seguiria
+  // testando a aplicacao errada (foi o que aconteceu com a 4175, do equipgest).
+  // Entao confirma que quem respondeu e o totem antes de continuar.
+  const html = await fetch(baseUrl).then((r) => r.text());
+  const nossoServidor = html.includes("GM - Catálogo Interativo");
+
+  if (!nossoServidor || saiuCedo || /already in use/i.test(stderr)) {
+    child.kill("SIGTERM");
+    throw new Error(
+      `A porta ${previewPort} nao esta servindo o totem: outra aplicacao respondeu.\n` +
+        `Use SMOKE_TOTEM_PORT pra escolher uma porta livre.\nSTDERR:\n${stderr}`
+    );
   }
 
   return { child, baseUrl };
@@ -166,13 +185,38 @@ async function installMockRoutes(page) {
   });
 }
 
+/**
+ * O gmserver nao tem o chromium que o playwright baixa (e baixar so pra rodar
+ * o smoke nao se paga), entao cai pro Chrome do sistema quando precisa.
+ * SMOKE_TOTEM_CHROME force um binario especifico.
+ */
+async function launchBrowser() {
+  const headless = process.env.SMOKE_TOTEM_HEADFUL !== "1";
+  const escolhido = process.env.SMOKE_TOTEM_CHROME?.trim();
+
+  if (escolhido) {
+    return chromium.launch({ headless, executablePath: escolhido, args: ["--no-sandbox"] });
+  }
+
+  try {
+    return await chromium.launch({ headless });
+  } catch (error) {
+    const candidatos = ["/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser"];
+    const doSistema = candidatos.find((caminho) => existsSync(caminho));
+    if (!doSistema) throw error;
+
+    console.warn(`[smoke] chromium do playwright indisponivel, usando ${doSistema}`);
+    return chromium.launch({ headless, executablePath: doSistema, args: ["--no-sandbox"] });
+  }
+}
+
 async function run() {
   await mkdir(outputDir, { recursive: true });
 
   const externalBaseUrl = process.env.SMOKE_TOTEM_BASE_URL?.trim() || "";
   const localServer = externalBaseUrl ? null : await startPreviewServer();
   const baseUrl = externalBaseUrl || localServer.baseUrl;
-  const browser = await chromium.launch({ headless: process.env.SMOKE_TOTEM_HEADFUL !== "1" });
+  const browser = await launchBrowser();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 900 },
     serviceWorkers: "block",
@@ -193,20 +237,21 @@ async function run() {
 
   try {
     await installMockRoutes(page);
-    if (scenario === "webhook_fail") {
-      await page.addInitScript(() => {
-        window.__GM_SMOKE_SAIBWEB_FAILURE__ = true;
-      });
-    }
 
-    await page.goto(`${baseUrl}/contexto`, { waitUntil: "networkidle" });
+    // Fluxo atual: /inicio -> catalogo, e o nome do cliente vem de um modal
+    // dentro do proprio catalogo. A tela /contexto (e a escolha manual de
+    // varejo/atacado) saiu em 04/09, quando o canal passou a ser por item.
+    await page.goto(`${baseUrl}/inicio`, { waitUntil: "domcontentloaded" });
+    // O botao tem animacao continua, entao nunca fica "stable" pro playwright.
+    await page.getByRole("button", { name: /come/i }).click({ force: true });
+
     if (pageErrors.length) {
-      throw new Error(`Page errors ao abrir /contexto: ${pageErrors.join(" | ")}`);
+      throw new Error(`Page errors ao abrir o catalogo: ${pageErrors.join(" | ")}`);
     }
     if (consoleErrors.length) {
-      throw new Error(`Console errors ao abrir /contexto: ${consoleErrors.join(" | ")}`);
+      throw new Error(`Console errors ao abrir o catalogo: ${consoleErrors.join(" | ")}`);
     }
-    await page.getByTestId("context-channel-varejo").click();
+
     await page.getByTestId("totem-name-key-S").click();
     await page.getByTestId("totem-name-key-M").click();
     await page.getByTestId("totem-name-key-O").click();
@@ -229,9 +274,6 @@ async function run() {
     await page.getByTestId("checkout-confirm-order").click();
 
     await page.getByTestId("checkout-success-overlay").waitFor({ state: "visible" });
-    if (scenario === "webhook_fail") {
-      await page.getByText("Pedido salvo com pendência de integração").waitFor({ state: "visible" });
-    }
 
     if (pageErrors.length) {
       throw new Error(`Page errors durante o smoke: ${pageErrors.join(" | ")}`);
@@ -242,14 +284,14 @@ async function run() {
     }
 
     await page.screenshot({
-      path: path.join(outputDir, `smoke-totem-${scenario}.png`),
+      path: path.join(outputDir, "smoke-totem.png"),
       fullPage: true,
     });
 
-    console.log(`Smoke test do totem passou (${scenario}).`);
+    console.log("Smoke test do totem passou.");
   } catch (error) {
     await page.screenshot({
-      path: path.join(outputDir, `smoke-totem-${scenario}-failure.png`),
+      path: path.join(outputDir, "smoke-totem-failure.png"),
       fullPage: true,
     }).catch(() => {});
     const diagnostics = [

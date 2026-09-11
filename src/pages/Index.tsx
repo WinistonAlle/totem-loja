@@ -12,13 +12,7 @@ import { useCart } from "@/contexts/CartContext";
 import { recordSystemEvent } from "@/lib/systemEvents";
 import { getChannelBasePrice } from "@/utils/productPricing";
 import { applyStoredWeightsToProducts } from "@/utils/productWeights";
-import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
-import {
-  getPricingContext,
-  getPricingContextCustomerName,
-  hasPricingContext,
-  updatePricingContextCustomerName,
-} from "@/utils/pricingContext";
+import { getPricingContextCustomerName, updatePricingContextCustomerName } from "@/utils/pricingContext";
 import { clearCustomerSession, getCustomerSessionSnapshot } from "@/utils/customerSession";
 import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
 
@@ -73,7 +67,6 @@ const ROUTES = {
   featured: "/destaques",
   productsCrud: "/admin",
   start: "/inicio",
-  contextoCompra: "/contexto",
 };
 
 /* --------------------------------------------------------
@@ -173,28 +166,6 @@ function scrollCatalogToTop() {
   });
 }
 
-function getChannelLabel(channel: ChannelType | null | undefined): string {
-  return channel === "atacado" ? "ATACADO" : "VAREJO";
-}
-
-function getCustomerTypeForChannel(channel: ChannelType): CustomerType {
-  return channel === "atacado" ? "cnpj" : "cpf";
-}
-
-function buildPricingContext(channel: ChannelType) {
-  const customer_type = getCustomerTypeForChannel(channel);
-  return {
-    customer_type,
-    channel,
-    price_table: `${channel.toUpperCase()}_${customer_type.toUpperCase()}`,
-    created_at: new Date().toISOString(),
-    customer_name: getPricingContextCustomerName(),
-  };
-}
-
-type CustomerType = "cpf" | "cnpj";
-type ChannelType = "varejo" | "atacado";
-
 /* --------------------------------------------------------
    TYPES
 -------------------------------------------------------- */
@@ -219,7 +190,7 @@ const Index: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const { clearCart, closeCart, repriceCartFromPricingContext, totalWeight } = useCart();
+  const { clearCart, closeCart } = useCart();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -344,18 +315,11 @@ const Index: React.FC = () => {
   const handleLogout = () => resetTotemSessionAndGoStart();
 
   useEffect(() => {
-    if (isAdmin) return;
-    if (!hasPricingContext()) navigate(ROUTES.contextoCompra, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, productsRefreshTick]);
-
-  useEffect(() => {
     if (isAdmin) {
       setNameModalOpen(false);
       setNameModalError("");
       return;
     }
-    if (!hasPricingContext()) return;
     const savedName = getPricingContextCustomerName();
     setTotemCustomerName(savedName);
     setNameModalOpen(!savedName);
@@ -418,143 +382,6 @@ const Index: React.FC = () => {
     const cur = location?.pathname ?? "";
     if (cur === path || cur.startsWith(path + "/")) return;
     navigate(path);
-  };
-
-  /* --------------------------------------------------------
-     SWITCH ATACADO/VAREJO
-  -------------------------------------------------------- */
-  void pricingTick;
-  const pricingCtx = getPricingContext();
-
-  const applyPricingChannel = useCallback((nextChannel: ChannelType) => {
-    const next = buildPricingContext(nextChannel);
-
-    try {
-      localStorage.setItem("pricing_context", JSON.stringify(next));
-      emitAppEvent(APP_EVENT.pricingContextChanged);
-    } catch {}
-
-    repriceCartFromPricingContext();
-  }, [repriceCartFromPricingContext]);
-
-  const handleToggleChannel = () => {
-    const ctx = getPricingContext();
-    if (!ctx) {
-      navigate(ROUTES.contextoCompra, { replace: true });
-      return;
-    }
-
-    const nextChannel: ChannelType = ctx.channel === "varejo" ? "atacado" : "varejo";
-    applyPricingChannel(nextChannel);
-  };
-
-  useEffect(() => {
-    if (!pricingCtx) return;
-
-    // Mantem a troca manual do toggle.
-    // A automacao aqui so promove para atacado quando o peso minimo e atingido.
-    if (totalWeight < WHOLESALE_WEIGHT_THRESHOLD_KG) return;
-    if (pricingCtx.channel === "atacado") return;
-
-    applyPricingChannel("atacado");
-  }, [applyPricingChannel, pricingCtx, totalWeight]);
-
-  const SwitchPricing: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
-    if (!pricingCtx) return null;
-    const isAtacado = pricingCtx.channel === "atacado";
-    const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
-    const progressToWholesale = Math.min(
-      (Math.max(Number(totalWeight ?? 0), 0) / WHOLESALE_WEIGHT_THRESHOLD_KG) * 100,
-      100
-    );
-    const remainingKg = Math.max(WHOLESALE_WEIGHT_THRESHOLD_KG - Number(totalWeight ?? 0), 0);
-
-    return (
-      <div
-        className={[
-          "rounded-2xl border border-gray-200 bg-white shadow-sm",
-          compact ? "p-3" : "p-4",
-        ].join(" ")}
-      >
-        <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div
-                className={[
-                  "font-extrabold text-gray-900 leading-tight",
-                  compact ? "text-[18px]" : "text-[22px]",
-              ].join(" ")}
-            >
-              {isAtacado ? "ATACADO" : "VAREJO"}
-              </div>
-              <div className={[compact ? "text-[13px]" : "text-[15px]", "text-gray-500 font-semibold"].join(" ")}>
-                {isAtacado && wholesaleUnlocked
-                  ? "Tabela de atacado liberada para este pedido"
-                  : `Faltam ${remainingKg.toFixed(1).replace(".", ",")}kg para liberar o atacado`}
-              </div>
-            </div>
-
-          <label
-            className={[
-              "relative inline-block shrink-0",
-              compact ? "h-[42px] w-[76px]" : "h-[46px] w-[84px]",
-            ].join(" ")}
-            aria-label="Alternar canal"
-          >
-            <input
-              type="checkbox"
-              className="peer sr-only"
-              checked={isAtacado}
-              onChange={handleToggleChannel}
-            />
-            <span
-              className={[
-                "absolute inset-0 cursor-pointer rounded-full border transition-all duration-300",
-                "bg-[#f6f7fb] border-[#d7dce5] shadow-[inset_0_1px_2px_rgba(15,23,42,0.08)]",
-                "peer-checked:border-[#52d24d] peer-checked:bg-[#52d24d]",
-                "peer-focus-visible:ring-4 peer-focus-visible:ring-[#52d24d]/20",
-              ].join(" ")}
-            />
-            <span
-              className={[
-                "pointer-events-none absolute top-1/2 left-[4px] -translate-y-1/2 rounded-full bg-white",
-                "shadow-[0_8px_18px_rgba(15,23,42,0.18),0_1px_2px_rgba(15,23,42,0.08)] ring-1 ring-black/5",
-                "transition-transform duration-300 ease-out",
-                compact
-                  ? "h-[34px] w-[34px] peer-checked:translate-x-[34px]"
-                  : "h-[38px] w-[38px] peer-checked:translate-x-[38px]",
-              ].join(" ")}
-            />
-          </label>
-        </div>
-
-        <div className={compact ? "mt-3" : "mt-4"}>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-[12px] font-bold uppercase tracking-[0.08em] text-gray-500">
-              {wholesaleUnlocked ? "Atacado liberado" : "Progresso para atacado"}
-            </span>
-            <span
-              className={`text-[12px] font-black uppercase tracking-[0.08em] ${
-                wholesaleUnlocked ? "text-emerald-700" : "text-[#9e0f14]"
-              }`}
-            >
-              {wholesaleUnlocked ? "15kg atingidos" : `${Math.round(progressToWholesale)}%`}
-            </span>
-          </div>
-
-          <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-gray-100 ring-1 ring-black/5">
-            <div
-              className="h-full rounded-full transition-[width] duration-500 ease-out"
-              style={{
-                width: `${progressToWholesale}%`,
-                background: wholesaleUnlocked
-                  ? "linear-gradient(90deg, #187468 0%, #26a97c 58%, #8ee2bf 100%)"
-                  : "linear-gradient(90deg, #9e0f14 0%, #cb4155 52%, #efb788 100%)",
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    );
   };
 
   /* --------------------------------------------------------
@@ -1022,15 +849,32 @@ const Index: React.FC = () => {
 
       {/* AVISOS (mobile mais proporcional) */}
       <section className="w-full">
-        <div className="h-[200px] sm:h-[280px] lg:h-[384px] w-full bg-gray-100 overflow-hidden">
+        <div className="relative h-[200px] sm:h-[280px] lg:h-[384px] w-full bg-gray-100 overflow-hidden">
           {currentNotice?.image_url ? (
-            <img
-              src={currentNotice.image_url}
-              alt={currentNotice.title || "Aviso"}
-              className="h-full w-full object-cover"
-              loading="lazy"
-              decoding="async"
-            />
+            <>
+              {/* Preenchimento: a propria arte, borrada e cobrindo a faixa.
+                  A faixa tem altura fixa e largura total, entao a proporcao
+                  dela MUDA com a tela (2,7:1 em 1024px, 5:1 em 1920px) e nao
+                  existe um recorte unico que sirva pra todas. Com object-cover
+                  a arte era cortada em cima e embaixo, comendo justamente o
+                  titulo da peca. Agora a arte aparece inteira e o que sobra nas
+                  laterais deixa de ser barra cinza. */}
+              <img
+                src={currentNotice.image_url}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover scale-110 blur-2xl opacity-70"
+                loading="lazy"
+                decoding="async"
+              />
+              <img
+                src={currentNotice.image_url}
+                alt={currentNotice.title || "Aviso"}
+                className="relative h-full w-full object-contain"
+                loading="lazy"
+                decoding="async"
+              />
+            </>
           ) : (
             <div className="h-full w-full grid place-items-center text-gray-400 font-semibold">
               <img src={logoGostinho} alt="GM" className="h-14 sm:h-16 opacity-80" />
@@ -1169,8 +1013,6 @@ const Index: React.FC = () => {
           <aside className="hidden lg:block self-start sticky top-[112px] h-[calc(100dvh-128px)]">
             <div className="h-full rounded-[26px] border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 flex flex-col gap-3">
-                <SwitchPricing />
-
                 {isAdmin && (
                   <>
                     <div className="h-px bg-gray-100 my-1" />
@@ -1465,8 +1307,6 @@ const Index: React.FC = () => {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-3">
-                    <SwitchPricing compact />
-
                     {isAdmin && (
                       <>
                         <button

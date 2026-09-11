@@ -10,8 +10,6 @@
     "lint": "eslint .",
     "preview": "vite preview --port=4174",
     "smoke:totem": "node scripts/smoke-totem.mjs",
-    "smoke:totem:success": "SMOKE_TOTEM_SCENARIO=success node scripts/smoke-totem.mjs",
-    "smoke:totem:webhook-fail": "SMOKE_TOTEM_SCENARIO=webhook_fail node scripts/smoke-totem.mjs",
     "automation:webhook": "tsx automation/saibweb-webhook.ts",
     "automation:runner": "tsx automation/saibweb-runner.ts",
     "test": "vitest run",

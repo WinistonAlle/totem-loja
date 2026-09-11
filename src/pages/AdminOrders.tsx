@@ -28,6 +28,14 @@ type OrderRow = {
   erp_error: string | null;
   erp_external_id: string | null;
   erp_nota_fiscal: string | null;
+  // Preenchidos por automation/pdv-sync/pull-from-pdv.ts quando o caixa do
+  // PDV cobra o pedido -- e o numero de CIGAM real depois da integracao com
+  // o PDV (03/09/2026). erp_external_id acima so tem valor em pedidos
+  // antigos, de antes dessa mudanca (quando o totem ainda criava o pedido
+  // no CIGAM sozinho).
+  pdv_order_number: string | null;
+  pdv_nota_fiscal: string | null;
+  paid_at: string | null;
 };
 
 type AdminActionRow = {
@@ -419,6 +427,9 @@ export default function AdminOrders() {
           "erp_error",
           "erp_external_id",
           "erp_nota_fiscal",
+          "pdv_order_number",
+          "pdv_nota_fiscal",
+          "paid_at",
         ].join(",")
       )
       .order("created_at", { ascending: false });
@@ -829,8 +840,23 @@ export default function AdminOrders() {
                         return (
                           <tr key={o.id} style={styles.tr}>
                             <td style={styles.tdStrong}>
-                              {o.order_number || "—"}
-                              <div style={styles.tdMuted}>{o.id}</div>
+                              {/* Numero real do CIGAM primeiro (novo fluxo:
+                                  pdv_order_number, preenchido quando o caixa
+                                  do PDV cobra; erp_external_id so em pedidos
+                                  de antes da integracao com o PDV) -- nunca
+                                  o interno GM-AAAAMMDD-#### em destaque, ver
+                                  memoria feedback_numero_pedido_cigam. */}
+                              {o.pdv_order_number || o.erp_external_id ? (
+                                <>
+                                  {o.pdv_order_number || o.erp_external_id}
+                                  <div style={styles.tdMuted}>{o.order_number || o.id}</div>
+                                </>
+                              ) : (
+                                <>
+                                  {o.order_number || "—"}
+                                  <div style={styles.tdMuted}>{o.id}</div>
+                                </>
+                              )}
                             </td>
 
                             <td style={styles.td}>
@@ -891,7 +917,7 @@ export default function AdminOrders() {
                     <div key={o.id} style={styles.mobileCard}>
                       <div style={styles.mobileTop}>
                         <div style={{ minWidth: 0 }}>
-                          <div style={styles.mobileTitle}>{o.order_number || "—"}</div>
+                          <div style={styles.mobileTitle}>{o.pdv_order_number || o.erp_external_id || o.order_number || "—"}</div>
                           <div style={styles.mobileSub} title={o.customer_name || ""}>
                             <b style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {o.customer_name || "Cliente não identificado"}
@@ -967,7 +993,7 @@ export default function AdminOrders() {
           >
             <div style={styles.modalTop}>
               <div style={{ minWidth: 0 }}>
-                <div style={styles.modalTitle}>Pedido {selected.order_number || "—"}</div>
+                <div style={styles.modalTitle}>Pedido {selected.pdv_order_number || selected.erp_external_id || selected.order_number || "—"}</div>
                 <div style={styles.modalSub}>
                   {selected.customer_name || "Cliente não identificado"} • {formatCustomerDocument(selected.customer_document)} •{" "}
                   {new Date(selected.created_at).toLocaleString("pt-BR")}
@@ -1025,7 +1051,38 @@ export default function AdminOrders() {
                 })()}
               </div>
 
-              {/* CIGAM */}
+              {/* Pago no PDV — fluxo novo (03/09/2026): o cliente digita o
+                  pedido no totem, mas quem cobra e fala com o CIGAM e o
+                  caixa do PDV. So aparece depois que o caixa efetivamente
+                  cobrou (automation/pdv-sync/pull-from-pdv.ts preenche isto). */}
+              {selected.pdv_order_number && (
+                <div style={styles.section}>
+                  <div style={styles.sectionTitle}>Pago no PDV</div>
+                  <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={styles.summaryLabel}>Pedido no CIGAM:</span>
+                      <span style={{ fontSize: 13, fontWeight: 900 }}>{selected.pdv_order_number}</span>
+                    </div>
+                    {selected.pdv_nota_fiscal && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={styles.summaryLabel}>Nota fiscal:</span>
+                        <span style={{ fontSize: 13, fontWeight: 900 }}>{selected.pdv_nota_fiscal}</span>
+                      </div>
+                    )}
+                    {selected.paid_at && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={styles.summaryLabel}>Pago em:</span>
+                        <span style={{ fontSize: 13, fontWeight: 900 }}>{new Date(selected.paid_at).toLocaleString("pt-BR")}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* CIGAM (fluxo antigo — so tem dado em pedidos de antes da
+                  integracao com o PDV; um pedido novo sem pdv_order_number
+                  ainda esta so aguardando o caixa cobrar, nao e erro). */}
+              {!selected.pdv_order_number && (
               <div style={{ ...styles.section, ...(selected.erp_status === "ERROR" ? { borderColor: "rgba(239,68,68,0.35)", background: "rgba(239,68,68,0.03)" } : {}) }}>
                 <div style={styles.sectionTitle}>Integração CIGAM</div>
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1060,6 +1117,7 @@ export default function AdminOrders() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Cancelamento */}
               <div style={styles.section}>

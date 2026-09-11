@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 
 import CartToggle from "@/components/CartToggle";
 import Cart from "@/components/Cart";
-import { getChannelBasePrice, resolveProductPrice } from "@/utils/productPricing";
+import { getChannelBasePrice } from "@/utils/productPricing";
 import { applyStoredWeightsToProducts } from "@/utils/productWeights";
 import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
@@ -93,46 +93,6 @@ function toNumber(value: unknown, fallback = 0): number {
 }
 
 /* --------------------------------------------------------
-   PRICING CONTEXT (tabela escolhida no questionário)
--------------------------------------------------------- */
-type PricingCustomerType = "cpf" | "cnpj";
-type PricingChannelType = "varejo" | "atacado";
-
-type PricingContext = {
-  customer_type: PricingCustomerType | null;
-  channel: PricingChannelType | null;
-  price_table: string | null;
-};
-
-function safeGetPricingContextNow(): PricingContext {
-  try {
-    const raw = localStorage.getItem("pricing_context");
-    if (!raw) return { customer_type: null, channel: null, price_table: null };
-    const p = JSON.parse(raw);
-
-    const ct = p?.customer_type;
-    const ch = p?.channel;
-
-    const okCt = ct === "cpf" || ct === "cnpj";
-    const okCh = ch === "varejo" || ch === "atacado";
-
-    const pt = typeof p?.price_table === "string" ? String(p.price_table).trim() : null;
-
-    return {
-      customer_type: okCt ? ct : null,
-      channel: okCh ? ch : null,
-      price_table: pt && pt.length ? pt : null,
-    };
-  } catch {
-    return { customer_type: null, channel: null, price_table: null };
-  }
-}
-
-function pickPriceByContext(product: Product, ctx: PricingContext): number {
-  return resolveProductPrice(product, ctx);
-}
-
-/* --------------------------------------------------------
    TYPES
 -------------------------------------------------------- */
 type OrderItem = {
@@ -146,6 +106,9 @@ type OrderItem = {
 type Order = {
   id: string;
   order_number: string | null;
+  customer_name: string | null;
+  paid_at: string | null;
+  pdv_order_number: string | null;
   total_items: number | null;
   total_value: number | null;
   status: string | null;
@@ -331,7 +294,7 @@ const MyOrdersPage: React.FC = () => {
   const fetchOrdersFallback = useCallback(async (docParam: string) => {
     const { data: ordersRows, error: oErr } = await supabase
       .from("orders")
-      .select("id, order_number, status, created_at, total_items, total_value")
+      .select("id, order_number, customer_name, paid_at, pdv_order_number, status, created_at, total_items, total_value")
       .eq("customer_document", docParam)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -370,6 +333,9 @@ const MyOrdersPage: React.FC = () => {
     return oList.map((r: any) => ({
       id: String(r.id),
       order_number: r.order_number ?? null,
+      customer_name: r.customer_name ?? null,
+      paid_at: r.paid_at ?? null,
+      pdv_order_number: r.pdv_order_number ?? null,
       total_items: r.total_items ?? null,
       total_value: r.total_value ?? null,
       status: r.status ?? null,
@@ -399,6 +365,9 @@ const MyOrdersPage: React.FC = () => {
         const mapped: Order[] = rows.map((r: any) => ({
           id: String(r.id),
           order_number: r.order_number ?? null,
+          customer_name: r.customer_name ?? null,
+          paid_at: r.paid_at ?? null,
+          pdv_order_number: r.pdv_order_number ?? null,
           total_items: r.total_items ?? null,
           total_value: r.total_value ?? null,
           status: r.status ?? null,
@@ -447,8 +416,6 @@ const MyOrdersPage: React.FC = () => {
   async function handleRefazerPedido(order: Order) {
     try {
       setRefazendoId(order.id);
-
-      const pricingCtx = safeGetPricingContextNow();
 
       const rows = (order.order_items ?? []) as any[];
       if (!rows.length) {
@@ -522,15 +489,10 @@ const MyOrdersPage: React.FC = () => {
           continue;
         }
 
-        const chosenPrice = pickPriceByContext(product, pricingCtx);
-
-        const pricedProduct: Product = {
-          ...(product as any),
-          price: chosenPrice,
-          employee_price: chosenPrice,
-        } as Product;
-
-        toAdd.push({ product: pricedProduct, quantity: qty });
+        // O CartContext recalcula o preço internamente pela quantidade
+        // resultante (ver addMultipleToCart) — não precisa pré-precificar
+        // aqui.
+        toAdd.push({ product, quantity: qty });
       }
 
       if (toAdd.length === 0) {
@@ -859,6 +821,11 @@ const MyOrdersPage: React.FC = () => {
                         <div key={order.id} className="rounded-[24px] sm:rounded-[26px] border border-gray-200 bg-white shadow-sm p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
+                              {order.customer_name && (
+                                <div className="text-[13px] font-extrabold text-gray-500 leading-tight truncate">
+                                  {order.customer_name}
+                                </div>
+                              )}
                               <div className="text-[15px] sm:text-[16px] font-extrabold text-gray-900 leading-tight">
                                 {dateTime}
                               </div>
@@ -872,9 +839,17 @@ const MyOrdersPage: React.FC = () => {
                               <div className="text-[12px] font-extrabold text-gray-500 text-right">
                                 {order.status ? String(order.status) : "—"}
                               </div>
-                              {order.order_number && (
+                              {/* Numero que aparece pro cliente tem que ser o
+                                  do CIGAM (pdv_order_number, preenchido so
+                                  quando o caixa do PDV ja cobrou), nunca o
+                                  interno GM-AAAAMMDD-#### -- ver memoria
+                                  feedback_numero_pedido_cigam. Antes do
+                                  pagamento nao existe numero nenhum ainda,
+                                  entao nao mostra nada em vez de mostrar o
+                                  interno. */}
+                              {order.pdv_order_number && (
                                 <div className="text-[11px] text-gray-500 font-semibold text-right">
-                                  #{order.order_number}
+                                  Pedido {order.pdv_order_number}
                                 </div>
                               )}
                             </div>

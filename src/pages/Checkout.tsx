@@ -7,10 +7,9 @@ import { toast } from "@/components/ui/sonner";
 import { useNavigate } from "react-router-dom";
 import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
 import { createOrder } from "@/services/orders";
-import { getPricingChannel, getPricingContext, hasPricingContext, updatePricingContextCustomerName } from "@/utils/pricingContext";
+import { getPricingContextCustomerName, updatePricingContextCustomerName } from "@/utils/pricingContext";
 import { clearCustomerSession as clearStoredCustomerSession } from "@/utils/customerSession";
 import { getProductUnitPrice } from "@/utils/productData";
-import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
 
 import logo from "../images/logoc.png";
@@ -106,11 +105,11 @@ function SuccessOverlay({
    PAGE
 -------------------------------------------------------- */
 const Checkout: React.FC = () => {
-  const { cartItems, cartTotal, clearCart, totalWeight } = useCart();
+  const { cartItems, cartTotal, clearCart } = useCart();
   const navigate = useNavigate();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [customerName, setCustomerName] = useState(() => getPricingContext()?.customer_name ?? "");
+  const [customerName, setCustomerName] = useState(() => getPricingContextCustomerName());
 
   const safeCartTotal = Number.isFinite(cartTotal) ? cartTotal : 0;
   const totalCents = useMemo(() => Math.round(safeCartTotal * 100), [safeCartTotal]);
@@ -130,25 +129,7 @@ const Checkout: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!hasPricingContext()) {
-      navigate("/contexto", { replace: true });
-    }
-  }, [navigate]);
-
-  useEffect(() => {
-    const pricingChannel = getPricingChannel();
-    const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
-
-    if (pricingChannel === "atacado" && !wholesaleUnlocked) {
-      toast.error("Atacado indisponível para este pedido", {
-        description: `O checkout no atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`,
-      });
-      navigate("/catalogo", { replace: true });
-    }
-  }, [navigate, totalWeight]);
-
-  useEffect(() => {
-    const nextName = getPricingContext()?.customer_name ?? "";
+    const nextName = getPricingContextCustomerName();
     setCustomerName((current) => (current === nextName ? current : nextName));
   }, []);
 
@@ -184,8 +165,6 @@ const Checkout: React.FC = () => {
 
     try {
       const trimmedCustomerName = customerName.trim();
-      const pricingChannel = getPricingChannel();
-      const wholesaleUnlocked = hasWholesaleAccess(totalWeight);
 
       if (!trimmedCustomerName) {
         toast.error("Digite seu nome", {
@@ -197,19 +176,11 @@ const Checkout: React.FC = () => {
 
       updatePricingContextCustomerName(trimmedCustomerName);
 
-      if (pricingChannel === "atacado" && !wholesaleUnlocked) {
-        toast.error("Atacado indisponível para este pedido", {
-          description: `O atacado só libera com ${WHOLESALE_WEIGHT_THRESHOLD_KG}kg no carrinho.`,
-        });
-        setIsSubmitting(false);
-        return;
-      }
-
       const { orderId, orderNumber } = await createOrder({
         customerId: null,
         customerDocument: "TOTEM-CONSUMIDOR",
         customerName: trimmedCustomerName,
-        paymentMethod: `attendant_${pricingChannel}`,
+        paymentMethod: "attendant",
         payOnPickupCents: totalCents,
         items: cartItems.map((ci) => ({ product: ci.product, quantity: ci.quantity })),
       });
@@ -440,12 +411,6 @@ const Checkout: React.FC = () => {
                   />
                 </div>
 
-                <div className="rounded-[16px] sm:rounded-[20px] bg-zinc-50 border px-4 sm:px-5 py-3 sm:py-4 flex items-center justify-between gap-3">
-                  <span className="text-[14px] sm:text-[16px] font-semibold text-gray-600">Preço aplicado</span>
-                  <span className="text-[16px] sm:text-[18px] font-black uppercase">
-                    {getPricingChannel()}
-                  </span>
-                </div>
               </div>
             </div>
 

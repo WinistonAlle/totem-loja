@@ -1,10 +1,8 @@
 // src/components/CartToggle.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ShoppingBag } from "lucide-react";
-import { APP_EVENT, subscribeAppEvent } from "@/lib/appEvents";
 import { useCart } from "../contexts/CartContext";
 import { getProductUnitPrice } from "@/utils/productData";
-import { WHOLESALE_WEIGHT_THRESHOLD_KG, hasWholesaleAccess } from "@/utils/wholesaleRules";
 
 function getLinePrice(item: any) {
   const p = item?.product ?? {};
@@ -14,31 +12,14 @@ function getLinePrice(item: any) {
 }
 
 const CartToggle: React.FC = () => {
-  const { cartItems, totalWeight, animateCartIcon, openCart } = useCart() as any;
-  const [pricingTick, setPricingTick] = useState(0);
+  const { cartItems, animateCartIcon, openCart } = useCart() as any;
 
-  const count = useMemo(
-    () =>
-      (cartItems ?? []).reduce(
-        (acc: number, it: any) => acc + (Number(it?.quantity ?? 0) || 0),
-        0
-      ),
-    [cartItems]
+  const count = (cartItems ?? []).reduce(
+    (acc: number, it: any) => acc + (Number(it?.quantity ?? 0) || 0),
+    0
   );
 
-  const total = useMemo(
-    () => (cartItems ?? []).reduce((acc: number, it: any) => acc + getLinePrice(it), 0),
-    [cartItems]
-  );
-
-  const progress = useMemo(() => {
-    const weight = Number(totalWeight ?? 0);
-    if (!Number.isFinite(weight) || weight <= 0) return 0;
-    return Math.min((weight / WHOLESALE_WEIGHT_THRESHOLD_KG) * 100, 100);
-  }, [totalWeight]);
-
-  void pricingTick;
-  const reachedWholesale = hasWholesaleAccess(totalWeight);
+  const total = (cartItems ?? []).reduce((acc: number, it: any) => acc + getLinePrice(it), 0);
 
   const [bump, setBump] = useState(false);
   const bumpTimeoutRef = useRef<number | null>(null);
@@ -68,20 +49,6 @@ const CartToggle: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
-    const onPricing = () => setPricingTick((prev) => prev + 1);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "pricing_context") onPricing();
-    };
-
-    const unsubscribe = subscribeAppEvent(APP_EVENT.pricingContextChanged, onPricing);
-    window.addEventListener("storage", onStorage);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
-
   if (!count) return null;
 
   return (
@@ -93,13 +60,6 @@ const CartToggle: React.FC = () => {
           70%  { transform: translateY(0) scale(1.02); }
           100% { transform: translateY(0) scale(1); }
         }
-
-        @keyframes gmWholesaleGlow {
-          0% { transform: translateX(-120%); opacity: 0; }
-          18% { opacity: .28; }
-          55% { opacity: .1; }
-          100% { transform: translateX(140%); opacity: 0; }
-        }
       `}</style>
 
       <div
@@ -110,78 +70,6 @@ const CartToggle: React.FC = () => {
           flex flex-col gap-3
         "
       >
-        <div
-          className="
-            relative overflow-hidden
-            rounded-[18px] sm:rounded-[20px]
-            border border-white/70
-            bg-white/94
-            px-4 py-2.5 sm:px-5 sm:py-3
-          "
-          style={{
-            boxShadow: `
-              0 18px 36px rgba(0,0,0,0.10),
-              inset 0 1px 0 rgba(255,255,255,0.9),
-              0 8px 18px rgba(0,0,0,0.04)
-            `,
-          }}
-        >
-          <div
-            className="pointer-events-none absolute inset-0 opacity-70"
-            style={{
-              background: reachedWholesale
-                ? "radial-gradient(circle at top right, rgba(34,197,94,0.08), transparent 40%)"
-                : "radial-gradient(circle at top right, rgba(255,255,255,0.65), transparent 40%)",
-            }}
-          />
-
-          <div className="relative flex items-center justify-between gap-3">
-            <div className="min-w-0 text-[18px] sm:text-[20px] font-black tracking-[-0.03em] text-gray-900 leading-none">
-              {Number(totalWeight || 0).toFixed(1).replace(".", ",")}
-              <span className="mx-1.5 text-gray-400">/</span>
-              {WHOLESALE_WEIGHT_THRESHOLD_KG.toFixed(0)}
-              <span className="ml-1 text-[11px] sm:text-[12px] font-bold text-gray-500">kg</span>
-            </div>
-
-            <div className="shrink-0">
-              <div
-                className={`rounded-full px-2.5 py-1 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.08em] ${
-                  reachedWholesale
-                    ? "bg-emerald-100/80 text-emerald-800 ring-1 ring-emerald-200/80"
-                    : "bg-white/70 text-gray-500 ring-1 ring-black/5"
-                }`}
-              >
-                {reachedWholesale ? "Atacado" : `${Math.round(progress)}%`}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-2">
-            <div className="relative h-2 sm:h-2.5 overflow-hidden rounded-full bg-[rgba(255,255,255,0.65)] ring-1 ring-black/6">
-              <div
-                className="absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 ease-out"
-                style={{
-                  width: `${progress}%`,
-                  background: reachedWholesale
-                    ? "linear-gradient(90deg, #187468 0%, #26a97c 58%, #8ee2bf 100%)"
-                    : "linear-gradient(90deg, #9e0f14 0%, #cb4155 52%, #efb788 100%)",
-                  boxShadow: reachedWholesale
-                    ? "0 0 12px rgba(38,169,124,0.2)"
-                    : "0 0 12px rgba(158,15,20,0.18)",
-                }}
-              />
-              <div
-                className="absolute inset-y-0 w-[32%] rounded-full"
-                style={{
-                  left: 0,
-                  animation: reachedWholesale ? "gmWholesaleGlow 3.4s ease-in-out infinite" : undefined,
-                  background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.45), transparent)",
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
         <button
           type="button"
           onClick={() => openCart()}

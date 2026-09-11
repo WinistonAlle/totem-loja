@@ -13,7 +13,6 @@ import { Input } from "@/components/ui/input";
 import logoGostinho from "@/images/logoc.png";
 import { resolveProductPrice } from "@/utils/productPricing";
 import { applyStoredWeightsToProducts } from "@/utils/productWeights";
-import { getPricingContext } from "@/utils/pricingContext";
 import { getCustomerSessionSnapshot } from "@/utils/customerSession";
 
 import { Search, ChevronLeft, Heart, History, Bell, LogOut } from "lucide-react";
@@ -73,10 +72,11 @@ function toBool(value: unknown): boolean {
 }
 
 /* --------------------------------------------------------
-   PRICING CONTEXT (CPF/CNPJ + ATACADO/VAREJO)
+   PRICING — preço de exibição (favoritos ainda não estão no carrinho,
+   então mostra o preço de 1 unidade, sempre varejo).
 -------------------------------------------------------- */
-function resolvePriceFromCtx(row: any, ctx: ReturnType<typeof getPricingContext>): number {
-  return resolveProductPrice(row, ctx);
+function resolvePriceFromCtx(row: any): number {
+  return resolveProductPrice(row, 1);
 }
 
 function stampFinalPrice(product: any, finalPrice: number) {
@@ -96,8 +96,8 @@ function stampFinalPrice(product: any, finalPrice: number) {
 /* --------------------------------------------------------
    MAPEAR PRODUTO
 -------------------------------------------------------- */
-function mapSupabaseProduct(row: any, ctx: ReturnType<typeof getPricingContext>): Product {
-  const finalPrice = resolvePriceFromCtx(row, ctx);
+function mapSupabaseProduct(row: any): Product {
+  const finalPrice = resolvePriceFromCtx(row);
 
   const imagesFromRow = Array.isArray(row.images) ? row.images.filter(Boolean) : [];
   const imagePath = row.image_path ?? row.imagePath ?? null;
@@ -176,7 +176,6 @@ const FavoritesPage: React.FC = () => {
   }, []);
 
   void pricingTick;
-  const ctx = getPricingContext();
 
   // ✅ login guard
   useEffect(() => {
@@ -251,7 +250,7 @@ const FavoritesPage: React.FC = () => {
       const productMap = new Map<string, Product>();
 
       for (const p of loadedProductsRaw) {
-        const mapped = mapSupabaseProduct(p, ctx);
+        const mapped = mapSupabaseProduct(p);
         productMap.set(String((mapped as any).id), mapped);
         if ((mapped as any).old_id != null) productMap.set(`old:${(mapped as any).old_id}`, mapped);
       }
@@ -392,7 +391,6 @@ const FavoritesPage: React.FC = () => {
 
             <div className="mt-1 text-[13px] opacity-90 line-clamp-1">
               {displayName}
-              {ctx ? ` • ${ctx.channel.toUpperCase()}` : ""}
             </div>
 
             <div className="mt-3 flex items-center justify-between gap-3">
