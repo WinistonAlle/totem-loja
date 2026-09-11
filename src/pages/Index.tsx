@@ -849,15 +849,32 @@ const Index: React.FC = () => {
 
       {/* AVISOS (mobile mais proporcional) */}
       <section className="w-full">
-        <div className="h-[200px] sm:h-[280px] lg:h-[384px] w-full bg-gray-100 overflow-hidden">
+        <div className="relative h-[200px] sm:h-[280px] lg:h-[384px] w-full bg-gray-100 overflow-hidden">
           {currentNotice?.image_url ? (
-            <img
-              src={currentNotice.image_url}
-              alt={currentNotice.title || "Aviso"}
-              className="h-full w-full object-cover"
-              loading="lazy"
-              decoding="async"
-            />
+            <>
+              {/* Preenchimento: a propria arte, borrada e cobrindo a faixa.
+                  A faixa tem altura fixa e largura total, entao a proporcao
+                  dela MUDA com a tela (2,7:1 em 1024px, 5:1 em 1920px) e nao
+                  existe um recorte unico que sirva pra todas. Com object-cover
+                  a arte era cortada em cima e embaixo, comendo justamente o
+                  titulo da peca. Agora a arte aparece inteira e o que sobra nas
+                  laterais deixa de ser barra cinza. */}
+              <img
+                src={currentNotice.image_url}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 h-full w-full object-cover scale-110 blur-2xl opacity-70"
+                loading="lazy"
+                decoding="async"
+              />
+              <img
+                src={currentNotice.image_url}
+                alt={currentNotice.title || "Aviso"}
+                className="relative h-full w-full object-contain"
+                loading="lazy"
+                decoding="async"
+              />
+            </>
           ) : (
             <div className="h-full w-full grid place-items-center text-gray-400 font-semibold">
               <img src={logoGostinho} alt="GM" className="h-14 sm:h-16 opacity-80" />
