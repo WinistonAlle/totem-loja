@@ -430,18 +430,27 @@ const Index: React.FC = () => {
     };
   }, []);
 
+  /* So aviso COM imagem entra no banner, e o giro conta ESTES, nao todos.
+     Antes o indice andava sobre a lista inteira: um aviso sem imagem gastava
+     os 7 segundos dele mostrando o logo no meio do carrossel. */
+  const bannerNotices = useMemo(
+    () => notices.filter((n) => !!n.image_url),
+    [notices]
+  );
+
   useEffect(() => {
-    if (notices.length <= 1) {
+    if (bannerNotices.length <= 1) {
       setCurrentNoticeIndex(0);
       return;
     }
     const interval = setInterval(() => {
-      setCurrentNoticeIndex((p) => (p + 1) % notices.length);
+      setCurrentNoticeIndex((p) => (p + 1) % bannerNotices.length);
     }, 7000);
     return () => clearInterval(interval);
-  }, [notices]);
+  }, [bannerNotices]);
 
-  const currentNotice = notices.length ? notices[currentNoticeIndex] : null;
+  const currentNoticeSafeIndex =
+    bannerNotices.length > 0 ? currentNoticeIndex % bannerNotices.length : 0;
 
   /* --------------------------------------------------------
      PRODUCTS
@@ -850,31 +859,57 @@ const Index: React.FC = () => {
       {/* AVISOS (mobile mais proporcional) */}
       <section className="w-full">
         <div className="relative h-[200px] sm:h-[280px] lg:h-[384px] w-full bg-gray-100 overflow-hidden">
-          {currentNotice?.image_url ? (
-            <>
-              {/* Preenchimento: a propria arte, borrada e cobrindo a faixa.
-                  A faixa tem altura fixa e largura total, entao a proporcao
-                  dela MUDA com a tela (2,7:1 em 1024px, 5:1 em 1920px) e nao
-                  existe um recorte unico que sirva pra todas. Com object-cover
-                  a arte era cortada em cima e embaixo, comendo justamente o
-                  titulo da peca. Agora a arte aparece inteira e o que sobra nas
-                  laterais deixa de ser barra cinza. */}
-              <img
-                src={currentNotice.image_url}
-                alt=""
-                aria-hidden="true"
-                className="absolute inset-0 h-full w-full object-cover scale-110 blur-2xl opacity-70"
-                loading="lazy"
-                decoding="async"
-              />
-              <img
-                src={currentNotice.image_url}
-                alt={currentNotice.title || "Aviso"}
-                className="relative h-full w-full object-contain"
-                loading="lazy"
-                decoding="async"
-              />
-            </>
+          {bannerNotices.length > 0 ? (
+            bannerNotices.map((n, idx) => {
+              const ativo = idx === currentNoticeSafeIndex;
+              return (
+                /* Todas as artes ficam montadas e so a ativa aparece.
+                   Trocar o `src` de uma <img> unica dava corte seco e um
+                   piscar na primeira exibicao de cada arte, porque o navegador
+                   so comecava a baixar na hora da troca. Empilhadas, elas ja
+                   chegaram: a transicao e so opacidade. */
+                <div
+                  key={n.id}
+                  aria-hidden={!ativo}
+                  className={[
+                    "absolute inset-0 transition-opacity duration-[900ms] ease-out",
+                    ativo ? "opacity-100" : "opacity-0",
+                  ].join(" ")}
+                >
+                  {/* Preenchimento: a propria arte, borrada e cobrindo a faixa.
+                      A faixa tem altura fixa e largura total, entao a proporcao
+                      dela MUDA com a tela (2,8:1 num totem de 1080, 5:1 numa TV
+                      de 1920) e nao existe recorte unico que sirva pra todas.
+
+                      O zoom lento vive AQUI, no fundo, e nao na arte: aplicado
+                      na arte ele a faria estourar a caixa, voltando a cortar
+                      justamente o titulo da peca. */}
+                  <img
+                    src={n.image_url as string}
+                    alt=""
+                    aria-hidden="true"
+                    className={[
+                      "absolute inset-0 h-full w-full object-cover blur-2xl opacity-70",
+                      "transition-transform duration-[8000ms] ease-linear motion-reduce:transition-none",
+                      ativo ? "scale-125" : "scale-110",
+                    ].join(" ")}
+                    loading="eager"
+                    decoding="async"
+                  />
+                  <img
+                    src={n.image_url as string}
+                    alt={n.title || "Aviso"}
+                    className={[
+                      "relative h-full w-full object-contain",
+                      "transition-transform duration-[900ms] ease-out motion-reduce:transition-none",
+                      ativo ? "scale-100" : "scale-[0.985]",
+                    ].join(" ")}
+                    loading="eager"
+                    decoding="async"
+                  />
+                </div>
+              );
+            })
           ) : (
             <div className="h-full w-full grid place-items-center text-gray-400 font-semibold">
               <img src={logoGostinho} alt="GM" className="h-14 sm:h-16 opacity-80" />
