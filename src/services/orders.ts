@@ -86,14 +86,22 @@ function isMissingRpcError(error: any): boolean {
   return code === "PGRST202" || message.includes("create_order_v1") || details.includes("create_order_v1");
 }
 
-function isPriceMismatchError(error: any): boolean {
-  const message = String(error?.message ?? "").toLowerCase();
-  const details = String(error?.details ?? "").toLowerCase();
+/**
+ * Sem acento na comparação: a create_order_v1 que estava no banco até
+ * 28/09/2026 escrevia "Os precos do carrinho" (sem cedilha), e o includes com
+ * "preços" nunca casava. A recusa virava erro na tela em vez de cair na
+ * conferência do app, e nenhum pedido passava.
+ */
+function semAcento(texto: unknown): string {
+  return String(texto ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
 
-  return (
-    message.includes("os preços do carrinho foram atualizados") ||
-    details.includes("os preços do carrinho foram atualizados")
-  );
+function isPriceMismatchError(error: any): boolean {
+  const alvo = "os precos do carrinho foram atualizados";
+  return semAcento(error?.message).includes(alvo) || semAcento(error?.details).includes(alvo);
 }
 
 function parsePositiveQuantity(quantity: number): number {
