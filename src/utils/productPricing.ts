@@ -136,6 +136,17 @@ export function getChannelBasePrice(product: any, channel: ChannelType = "varejo
  */
 const PACKAGE_COUNT_ATACADO_CATEGORIES = new Set(["Salgados P/ Fritar", "Salgados Assados"]);
 
+/**
+ * As mesmas duas categorias pelo id do banco (CATEGORY_NAME_BY_ID em
+ * Index.tsx: 2 = Salgados Assados, 3 = Salgados P/ Fritar). O carrinho recebe
+ * o produto já com o NOME da categoria, mas a conferência do checkout
+ * (createOrderViaClientFallback) lê a linha crua de `products`, que só tem o
+ * id. Sem isto a conferência caía na regra de peso: 4 pacotes de 3 kg viravam
+ * atacado lá e varejo no carrinho, e todo pedido assim era recusado com "Os
+ * preços do carrinho foram atualizados" (visto em 23/09/2026).
+ */
+const PACKAGE_COUNT_ATACADO_CATEGORY_IDS = new Set([2, 3]);
+
 export const PACKAGE_COUNT_ATACADO_THRESHOLD = 10;
 export const WEIGHT_ATACADO_THRESHOLD_KG = 10;
 
@@ -152,7 +163,11 @@ export function resolveLineChannel(product: any, quantity: number): ChannelType 
   if (!Number.isFinite(qty) || qty <= 0) return "varejo";
 
   const category = String(source?.category ?? "").trim();
-  if (PACKAGE_COUNT_ATACADO_CATEGORIES.has(category)) {
+  const categoryId = toNumber(source?.category_id);
+  if (
+    PACKAGE_COUNT_ATACADO_CATEGORIES.has(category) ||
+    (categoryId != null && PACKAGE_COUNT_ATACADO_CATEGORY_IDS.has(categoryId))
+  ) {
     return qty >= PACKAGE_COUNT_ATACADO_THRESHOLD ? "atacado" : "varejo";
   }
 

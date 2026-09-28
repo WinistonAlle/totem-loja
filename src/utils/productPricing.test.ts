@@ -60,6 +60,20 @@ describe("resolveLineChannel", () => {
   });
 });
 
+describe("resolveLineChannel pela linha crua do banco (só category_id)", () => {
+  it("salgado de 3 kg continua varejo até 9 pacotes, como no carrinho", () => {
+    const linhaDoBanco = { category_id: 3, weight: 3, is_package: false, price_cpf_varejo: 24.5, price_cpf_atacado: 18.5 };
+    expect(resolveLineChannel(linhaDoBanco, 4)).toBe("varejo");
+    expect(resolveLineChannel(linhaDoBanco, 9)).toBe("varejo");
+    expect(resolveLineChannel(linhaDoBanco, 10)).toBe("atacado");
+  });
+
+  it("salgado assado de 400 g vira atacado aos 10 pacotes, não pelo peso", () => {
+    const linhaDoBanco = { category_id: 2, weight: 0.4, is_package: true, price_cpf_varejo: 8.3, price_cpf_atacado: 7 };
+    expect(resolveLineChannel(linhaDoBanco, 10)).toBe("atacado");
+  });
+});
+
 describe("resolveProductPrice", () => {
   it("usa o preço de varejo (cpf) abaixo do limite", () => {
     expect(resolveProductPrice(produtoSalgado(), 5)).toBe(10);

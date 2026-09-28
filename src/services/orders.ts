@@ -131,7 +131,7 @@ async function loadAuthoritativeProducts(productIds: string[]): Promise<Map<stri
   const { data, error } = await supabase
     .from("products")
     .select(
-      "id, old_id, name, price, employee_price, weight, is_package, price_cpf_varejo, price_cpf_atacado, price_cnpj_varejo, price_cnpj_atacado"
+      "id, old_id, name, category_id, price, employee_price, weight, is_package, price_cpf_varejo, price_cpf_atacado, price_cnpj_varejo, price_cnpj_atacado"
     )
     .in("id", uniqueIds);
 
