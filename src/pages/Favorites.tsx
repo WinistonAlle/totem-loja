@@ -285,7 +285,7 @@ const FavoritesPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [customerId, docDigits, docPadded, ctx]);
+  }, [customerId, docDigits, docPadded]);
 
   useEffect(() => {
     if (isLogged) fetchFavorites();
