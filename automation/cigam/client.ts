@@ -276,6 +276,39 @@ export class CigamClient {
     return payload as HttpCustomResponse<T>;
   }
 
+  /**
+   * Físico de um material numa empresa, a mesma leitura do PDV
+   * (buscarSaldosEReservasPorEmpresa em pdv-gm): Disponibilidade/Buscar, soma de
+   * EstoqueGeral.Campo133 das linhas da empresa. Essa rota responde FORA do
+   * envelope {success,data}. Devolve `null` quando o CIGAM não trouxe linha da
+   * empresa (falha intermitente conhecida sob carga): não é zero, e quem chama
+   * deve manter o valor que já tinha.
+   */
+  async lerEstoqueFisico(codigoMaterial: string, empresa: string): Promise<number | null> {
+    const payload: any = await this.withAuthRetry(() =>
+      this.apiFetch("POST", "/suprimentos/es/Disponibilidade/Buscar", {
+        body: {
+          Origem: "PDV",
+          CodigoMaterial: codigoMaterial,
+          CodigoUnidadeNegocio: empresa,
+          CodigoCentroArmazenagem: this.cfg.centroArmazenagem,
+          CodigoUsuario: this.cfg.user(),
+        },
+      })
+    );
+    if (payload?.success === false) {
+      throw new CigamError((payload.messages ?? []).join("; ") || "Disponibilidade/Buscar recusou a consulta.");
+    }
+
+    let total: number | null = null;
+    for (const linha of payload?.EstoqueGeral ?? []) {
+      if (String(linha?.Campo6 ?? "").trim() !== codigoMaterial.trim()) continue;
+      if (String(linha?.Campo4 ?? "").trim() !== empresa.trim()) continue;
+      total = Number(((total ?? 0) + Number(linha.Campo133 ?? 0)).toFixed(3));
+    }
+    return total;
+  }
+
   private async criarCabecalho(pedido: CigamPedido): Promise<string> {
     const data = await this.withAuthRetry(() =>
       this.apiFetch<{ codigoPedido: string }>("POST", "/comercial/fa/Pedido/Salvar", {

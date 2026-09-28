@@ -12,6 +12,7 @@ import { useCart } from "@/contexts/CartContext";
 import { recordSystemEvent } from "@/lib/systemEvents";
 import { getChannelBasePrice } from "@/utils/productPricing";
 import { applyStoredWeightsToProducts } from "@/utils/productWeights";
+import { disponivelNoCigam } from "@/utils/estoqueCigam";
 import { getPricingContextCustomerName, updatePricingContextCustomerName } from "@/utils/pricingContext";
 import { clearCustomerSession, getCustomerSessionSnapshot } from "@/utils/customerSession";
 import { clearAllCartKeysFromStorage } from "@/utils/cartStorage";
@@ -47,8 +48,8 @@ const CATEGORY_NAME_BY_ID: Record<number, string> = {
 };
 
 const ITEMS_PER_PAGE = 24;
-const PRODUCTS_CACHE_KEY = "gm_catalog_products_v6";
-const LEGACY_PRODUCTS_CACHE_KEYS = ["gm_catalog_products_v5", "gm_catalog_products_v4", "gm_catalog_products_v2"];
+const PRODUCTS_CACHE_KEY = "gm_catalog_products_v7";
+const LEGACY_PRODUCTS_CACHE_KEYS = ["gm_catalog_products_v6", "gm_catalog_products_v5", "gm_catalog_products_v4", "gm_catalog_products_v2"];
 const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_CATALOG_DISPLAY_ORDER = 999999;
 const TOTEM_NAME_KEYBOARD_ROWS = [
@@ -586,7 +587,10 @@ const Index: React.FC = () => {
           return;
         }
 
-        const mappedBase: Product[] = sortCatalogProducts(((data as any[]) ?? []).map(mapRowToProduct));
+        // Some quem não tem estoque no CIGAM, igual à busca do PDV
+        // (ver src/utils/estoqueCigam.ts).
+        const comEstoque = ((data as any[]) ?? []).filter(disponivelNoCigam);
+        const mappedBase: Product[] = sortCatalogProducts(comEstoque.map(mapRowToProduct));
         const mapped = await applyStoredWeightsToProducts(mappedBase);
         setProducts(mapped);
         setLoadError(null);
