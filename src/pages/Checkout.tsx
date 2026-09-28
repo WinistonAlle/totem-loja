@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/sonner";
 import { useNavigate } from "react-router-dom";
 import { APP_EVENT, emitAppEvent } from "@/lib/appEvents";
-import { createOrder } from "@/services/orders";
+import { createOrder, ItensSemEstoqueError } from "@/services/orders";
 import { getPricingContextCustomerName, updatePricingContextCustomerName } from "@/utils/pricingContext";
 import { clearCustomerSession as clearStoredCustomerSession } from "@/utils/customerSession";
 import { getProductUnitPrice } from "@/utils/productData";
@@ -105,7 +105,7 @@ function SuccessOverlay({
    PAGE
 -------------------------------------------------------- */
 const Checkout: React.FC = () => {
-  const { cartItems, cartTotal, clearCart } = useCart();
+  const { cartItems, cartTotal, clearCart, removeFromCart } = useCart();
   const navigate = useNavigate();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -197,6 +197,11 @@ const Checkout: React.FC = () => {
         description: `Total: ${formatBRLFromCents(totalCents)} • Finalize no atendimento.`,
       });
     } catch (err: any) {
+      if (err instanceof ItensSemEstoqueError) {
+        err.itens.forEach((item) => removeFromCart(item.id));
+        toast.error("Produto sem estoque", { description: err.message });
+        return;
+      }
       console.error("Erro ao finalizar pedido:", err);
       toast.error("Erro ao finalizar pedido", {
         description:

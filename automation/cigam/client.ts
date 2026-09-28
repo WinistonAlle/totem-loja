@@ -276,6 +276,37 @@ export class CigamClient {
     return payload as HttpCustomResponse<T>;
   }
 
+  /** Materiais do grupo 002 (produto acabado), como o PDV lista
+   * (buscarTodosMateriais em pdv-gm). Resposta fora do envelope. */
+  async buscarMateriais(): Promise<Array<{ Codigo: string; Descricao: string; CodigoUnidadeMedida: string }>> {
+    const payload: any = await this.withAuthRetry(() =>
+      this.apiFetch("GET", "/suprimentos/es/Materiais/PesquisarMateriais", {
+        query: { $filter: "CodigoGrupo eq '002'" },
+        timeoutMs: 60_000,
+      })
+    );
+    if (!Array.isArray(payload)) throw new CigamError("PesquisarMateriais não devolveu uma lista.");
+    return payload;
+  }
+
+  /** Todas as linhas de tabela de preço do grupo 002, paginadas como no PDV
+   * (buscarTodosPrecos em pdv-gm). `Elemento` vem com espaços à direita. */
+  async buscarPrecos(): Promise<Array<{ Elemento: string; CodigoTabela: string; PrecoUnitario: number }>> {
+    const todas: Array<{ Elemento: string; CodigoTabela: string; PrecoUnitario: number }> = [];
+    for (let skip = 0; ; skip += 500) {
+      const pagina: any = await this.withAuthRetry(() =>
+        this.apiFetch("GET", "/genericos/ge/PrecosTabela/Buscar", {
+          query: { $top: "500", $skip: String(skip), $filter: "startswith(Elemento, '002')" },
+          timeoutMs: 60_000,
+        })
+      );
+      if (!Array.isArray(pagina)) throw new CigamError("PrecosTabela/Buscar não devolveu uma lista.");
+      todas.push(...pagina);
+      if (pagina.length < 500) break;
+    }
+    return todas;
+  }
+
   /**
    * Físico de um material numa empresa, a mesma leitura do PDV
    * (buscarSaldosEReservasPorEmpresa em pdv-gm): Disponibilidade/Buscar, soma de

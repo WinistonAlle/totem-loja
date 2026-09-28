@@ -35,6 +35,29 @@ describe("buildTotemOrderPayload", () => {
     ]);
   });
 
+  it("item por KG vai em R$/kg, para o caixa cobrar o mesmo que o totem mostrou", () => {
+    const order = {
+      id: "totem-uuid-3",
+      order_number: "GM-20260928-000003",
+      customer_name: "Fulana",
+      customer_document: "TOTEM-CONSUMIDOR",
+      order_items: [
+        {
+          product_name: "Gostinho Gostoso Coxinha de Frango 30g – Pacote 3kg",
+          quantity: 4,
+          unit_price_cents: 8085,
+          products: { cigam_code: "002003000031", cigam_unit: "KG", weight: 3 }
+        }
+      ]
+    };
+
+    const [item] = buildTotemOrderPayload(order as any).items_json;
+    expect(item.unitPrice).toBe(26.95);
+    expect(item.packageWeightKg).toBe(3);
+    // lineTotal do PDV: quantidade × R$/kg × peso do pacote
+    expect(Number((item.quantity * item.unitPrice * item.packageWeightKg!).toFixed(2))).toBe(323.4);
+  });
+
   it("marca packageWeightKg para item vendido por KG", () => {
     const order = {
       id: "totem-uuid-2",
@@ -59,7 +82,7 @@ describe("buildTotemOrderPayload", () => {
         productName: "Pão de Queijo Forno Quente 25g – Pacote 800g",
         unit: "KG",
         quantity: 1,
-        unitPrice: 15,
+        unitPrice: 18.75,
         packageWeightKg: 0.8
       }
     ]);

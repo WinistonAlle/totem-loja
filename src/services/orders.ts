@@ -2,6 +2,7 @@
 import { supabase } from "@/lib/supabase";
 import { resolveProductPrice } from "@/utils/productPricing";
 import { loadStoredWeightMap } from "@/utils/productWeights";
+import { disponivelNoCigam } from "@/utils/estoqueCigam";
 import { recordSystemEvent } from "@/lib/systemEvents";
 
 type OrderItemInput = {
@@ -338,8 +339,48 @@ async function createOrderViaClientFallback(input: CreateOrderInput): Promise<Cr
   return finalizeOrder(orderId, orderNumber);
 }
 
+/**
+ * Item do carrinho que acabou (ou foi desligado) entre o cliente pôr no
+ * carrinho e confirmar. O catálogo já esconde quem está sem estoque, mas o
+ * carrinho fica no aparelho: sem isto o pedido ia para o caixa com um item
+ * que o PDV não consegue vender.
+ */
+export class ItensSemEstoqueError extends Error {
+  constructor(public readonly itens: Array<{ id: string; nome: string }>) {
+    super(
+      itens.length === 1
+        ? `${itens[0].nome} acabou e saiu do carrinho. Confira o pedido e confirme de novo.`
+        : `${itens.map((i) => i.nome).join(", ")} acabaram e saíram do carrinho. Confira o pedido e confirme de novo.`
+    );
+    this.name = "ItensSemEstoqueError";
+  }
+}
+
+async function garantirEstoqueDoCarrinho(items: CreateOrderInput["items"]): Promise<void> {
+  const ids = Array.from(new Set(items.map(({ product }) => String(product?.id ?? "")).filter(Boolean)));
+  if (!ids.length) return;
+  const { data, error } = await supabase
+    .from("products")
+    .select("id, name, active, in_stock, estoque_cigam")
+    .in("id", ids);
+  // Sem conseguir ler não bloqueia: o PDV confere o estoque de novo na venda.
+  if (error || !data) return;
+  const porId = new Map((data as any[]).map((p) => [String(p.id), p]));
+  const nomeNoCarrinho = new Map(items.map(({ product }) => [String(product?.id ?? ""), String(product?.name ?? "Um produto")]));
+  const acabaram = ids
+    .filter((id) => {
+      const p = porId.get(id);
+      return !p || p.active === false || p.in_stock === false || !disponivelNoCigam(p);
+    })
+    .map((id) => ({ id, nome: String(porId.get(id)?.name ?? nomeNoCarrinho.get(id)) }));
+  if (acabaram.length) throw new ItensSemEstoqueError(acabaram);
+}
+
 export async function createOrder(input: CreateOrderInput): Promise<CreateOrderResult> {
   const startedAt = Date.now();
+  // Fora do try: produto que acabou não é falha do sistema, e não pode virar
+  // order_failure (o vigia alertaria por isso).
+  await garantirEstoqueDoCarrinho(input.items);
 
   try {
     const rpcResult = await tryCreateOrderViaRpc(input);

@@ -13,6 +13,8 @@ import { pushPendingOrders } from "./push-to-pdv";
 import { reconcilePaidOrders } from "./pull-from-pdv";
 import { CigamClient } from "../cigam/client";
 import { sincronizarEstoque } from "../estoque/sync-estoque";
+import { sincronizarPrecos } from "../estoque/sync-precos";
+import { rodarVigia } from "./vigia";
 
 const INTERVAL_MS = Number(process.env.PDV_SYNC_INTERVAL_MS ?? 60000);
 const ESTOQUE_INTERVAL_MS = Number(process.env.ESTOQUE_SYNC_INTERVAL_MS ?? 5 * 60_000);
@@ -49,10 +51,23 @@ async function cicloEstoque() {
     console.log(
       `[estoque] lidos=${r.lidos} falhas=${r.falhas} atualizados=${r.atualizados} sem_estoque=${r.semEstoque} em ${Math.round((Date.now() - inicio) / 1000)}s`
     );
+    const p = await sincronizarPrecos(totemSupabase, cigam);
+    if (p.atualizados) console.log(`[preco] ${p.atualizados} produto(s) com preço atualizado do CIGAM`);
+    ultimoEstoqueOk = new Date();
   } catch (err) {
     console.error("[estoque] falha no ciclo:", err instanceof Error ? err.message : err);
   } finally {
     estoqueRodando = false;
+  }
+}
+
+let ultimoEstoqueOk: Date | null = null;
+const VIGIA_INTERVAL_MS = Number(process.env.VIGIA_INTERVAL_MS ?? 10 * 60_000);
+async function cicloVigia() {
+  try {
+    await rodarVigia(totemSupabase, pdvSupabase, ultimoEstoqueOk);
+  } catch (err) {
+    console.error("[vigia] falha:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -61,3 +76,5 @@ ciclo();
 setInterval(ciclo, INTERVAL_MS);
 cicloEstoque();
 setInterval(cicloEstoque, ESTOQUE_INTERVAL_MS);
+setTimeout(cicloVigia, 2 * 60_000);
+setInterval(cicloVigia, VIGIA_INTERVAL_MS);

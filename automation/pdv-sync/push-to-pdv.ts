@@ -4,12 +4,12 @@
  * automation/cigam/process-pending-orders.ts: o totem não fala mais com o
  * CIGAM, quem faz isso agora é o PDV no momento em que o caixa cobra.
  *
- * Conversão de quantidade/preço: NENHUMA é feita aqui — vai o preço de
- * pacote (unitPrice) e, só para material KG, o peso do pacote
- * (packageWeightKg). É o orderService.ts do PDV (cigamQuantity/lineTotal)
- * quem converte para R$/kg e kg totais na hora de montar o pedido no CIGAM
- * — mesma fórmula que o antigo cliente CIGAM do totem já usava
- * (ver automation/cigam/process-pending-orders.ts:buildItens, aposentado).
+ * Preço: para material KG o PDV espera unitPrice em R$/kg e cobra
+ * unitPrice × packageWeightKg por pacote (lineTotal em pdv-gm orderService.ts).
+ * O totem guarda o preço do PACOTE, então aqui ele é dividido pelo peso. Até
+ * 28/09/2026 ia o preço do pacote direto, e um pacote de 3 kg de R$ 73,50
+ * chegaria ao caixa como R$ 220,50. A regra é: o caixa cobra exatamente o
+ * que o totem mostrou. Para PCT/UN/CX o preço do pacote já é o do CIGAM.
  */
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
@@ -65,13 +65,16 @@ export function buildTotemOrderPayload(order: OrderRow): PedidoTotemPayload {
     const porKg = unidade === "KG";
     const peso = Number(produto.weight) > 0 ? Number(produto.weight) : undefined;
 
+    const precoDoPacote = item.unit_price_cents / 100;
+    const comPeso = porKg && peso;
+
     return {
       cigamCode: produto.cigam_code,
       productName: item.product_name,
       unit: unidade,
       quantity: item.quantity,
-      unitPrice: item.unit_price_cents / 100,
-      ...(porKg && peso ? { packageWeightKg: peso } : {})
+      unitPrice: comPeso ? Math.round((precoDoPacote / peso) * 10000) / 10000 : precoDoPacote,
+      ...(comPeso ? { packageWeightKg: peso } : {})
     };
   });
 
@@ -96,7 +99,12 @@ export async function pushPendingOrders(
     .select(
       "id, order_number, customer_name, customer_document, order_items(product_name, quantity, unit_price_cents, products(cigam_code, cigam_unit, weight))"
     )
-    .is("pdv_sync_status", null)
+    // Novos e os que falharam há mais de um minuto. Antes um pedido que
+    // falhava uma vez (rede, Supabase fora) ficava ERROR para sempre e o
+    // cliente esperava no caixa por um pedido que nunca apareceu. Pago não
+    // volta: já foi vendido.
+    .or(`pdv_sync_status.is.null,and(pdv_sync_status.eq.ERROR,updated_at.lt.${new Date(Date.now() - 60_000).toISOString()})`)
+    .is("paid_at", null)
     .order("created_at", { ascending: true })
     .limit(50);
 
@@ -109,7 +117,9 @@ export async function pushPendingOrders(
     try {
       const payload = buildTotemOrderPayload(order);
       const { error: insertError } = await pdvSupabase.from("pedidos_totem").insert(payload);
-      if (insertError) throw new Error(insertError.message);
+      // 23505 = totem_order_id já está na fila: a tentativa anterior entrou e
+      // só a resposta se perdeu. Conta como enviado, sem duplicar.
+      if (insertError && insertError.code !== "23505") throw new Error(insertError.message);
 
       await totemSupabase
         .from("orders")
@@ -121,7 +131,7 @@ export async function pushPendingOrders(
       const message = err instanceof Error ? err.message : String(err);
       await totemSupabase
         .from("orders")
-        .update({ pdv_sync_status: "ERROR", pdv_sync_error: message })
+        .update({ pdv_sync_status: "ERROR", pdv_sync_error: message, updated_at: new Date().toISOString() })
         .eq("id", order.id);
       erros++;
       console.error(`❌ [pdv-push] ${order.order_number}: ${message}`);
