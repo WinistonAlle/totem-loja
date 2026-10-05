@@ -241,7 +241,11 @@ const Checkout: React.FC = () => {
   }
 
   return (
-    <div className="min-h-[100dvh] w-full" style={{ overscrollBehavior: "none", touchAction: "pan-y" }}>
+    <div
+      className="min-h-[100dvh] w-full"
+      style={{ overscrollBehavior: "none", touchAction: "pan-y" }}
+      data-kiosk-busy={isSubmitting || successOpen ? "true" : "false"}
+    >
       <style>{`
         html, body, #root { height: 100%; }
         body { margin: 0; }

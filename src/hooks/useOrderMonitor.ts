@@ -78,7 +78,8 @@ export function useOrderMonitor() {
     } catch (error) {
       console.error("Falha ao carregar painel de pedidos em tempo real.", error);
       await new Promise((resolve) => window.setTimeout(resolve, LOADING_DELAY_MS));
-      setSourceOrders(orderMonitorMock);
+      // Pedido de demonstração só em desenvolvimento: na loja, a atendente tomaria por pedido real.
+      setSourceOrders(import.meta.env.DEV ? orderMonitorMock : []);
       setIsUsingMock(true);
     } finally {
       setLoading(false);

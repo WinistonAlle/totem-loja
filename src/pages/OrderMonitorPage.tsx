@@ -299,8 +299,10 @@ export default function OrderMonitorPage() {
 
           <section className="space-y-4">
             {isUsingMock ? (
-              <p className="text-sm text-amber-700">
-                Exibindo demonstracao local porque os pedidos reais nao puderam ser carregados agora.
+              <p role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-base font-semibold text-red-700">
+                {import.meta.env.DEV
+                  ? "Exibindo demonstração local porque os pedidos reais não puderam ser carregados agora."
+                  : "Não foi possível carregar os pedidos. Confira a internet e toque em atualizar."}
               </p>
             ) : null}
             {loading ? (

@@ -626,7 +626,7 @@ export default function Start() {
           id: "orders-monitor-shortcut",
           name: "Painel de Pedidos",
           document: "orders-monitor-shortcut",
-          role: shortcutTarget.sessionRole ?? "cliente",
+          role: "sessionRole" in shortcutTarget ? shortcutTarget.sessionRole : "cliente",
         });
       }
       setAdminOpen(false);

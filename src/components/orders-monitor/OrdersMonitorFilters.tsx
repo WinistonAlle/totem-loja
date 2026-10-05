@@ -7,7 +7,7 @@ type Props = {
   search: string;
   onSearchChange: (value: string) => void;
   sortBy: string;
-  onSortByChange: (value: string) => void;
+  onSortByChange: (value: "recentes" | "antigos" | "cliente") => void;
 };
 
 export function OrdersMonitorFilters({
@@ -34,7 +34,7 @@ export function OrdersMonitorFilters({
         </label>
 
         <label className="block">
-          <Select value={sortBy} onValueChange={onSortByChange}>
+          <Select value={sortBy} onValueChange={(value) => onSortByChange(value as Parameters<Props["onSortByChange"]>[0])}>
             <SelectTrigger className="h-12 rounded-2xl border-white/70 bg-white/85 shadow-sm">
               <span className="inline-flex items-center gap-2">
                 <ArrowUpDown className="h-4 w-4 text-slate-400" />

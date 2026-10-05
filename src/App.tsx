@@ -234,9 +234,10 @@ function GlobalInactivityGuard() {
   const currentSession = getCustomerSession();
   const currentRole = String(currentSession?.role ?? "").toLowerCase();
   const isPrivilegedSession = currentRole === "admin" || currentRole === "orders_monitor";
-  const isDisabledRoute = ["/inicio", "/checkout"].includes(location.pathname) || isPrivilegedSession;
+  const isDisabledRoute = location.pathname === "/inicio" || isPrivilegedSession;
 
-  const INACTIVITY_LIMIT = 25000;
+  // No checkout o cliente precisa de mais tempo (digitar o nome, conferir os itens).
+  const INACTIVITY_LIMIT = location.pathname === "/checkout" ? 60000 : 25000;
   const COUNTDOWN_SECONDS = 5;
 
   const [isIdleWarning, setIsIdleWarning] = useState(false);
@@ -295,6 +296,12 @@ function GlobalInactivityGuard() {
     };
 
     const startCountdown = () => {
+      // Pedido sendo enviado ou tela de sucesso aberta: quem cuida do reinício é o checkout.
+      if (document.querySelector('[data-kiosk-busy="true"]')) {
+        idleTimeoutRef.current = window.setTimeout(startCountdown, INACTIVITY_LIMIT);
+        return;
+      }
+
       setIsIdleWarning(true);
       setCountdown(COUNTDOWN_SECONDS);
 
@@ -342,7 +349,7 @@ function GlobalInactivityGuard() {
       });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDisabledRoute, location.pathname, navigate, clearCart, closeCart]);
+  }, [isDisabledRoute, INACTIVITY_LIMIT, location.pathname, navigate, clearCart, closeCart]);
 
   if (isDisabledRoute || !isIdleWarning) return null;
 
